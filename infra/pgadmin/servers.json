@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "vibemeter-db",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "vibemeter",
+      "Username": "vibemeter",
+      "SSLMode": "prefer"
+    }
+  }
+}
