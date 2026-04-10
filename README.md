@@ -180,7 +180,38 @@ SKIP_AUTH=true go run main.go
 # Listening on :8080
 ```
 
-### 3. Try it out
+### 3. Run the tests
+
+Unit tests require no running infrastructure — no Postgres or Redis needed.
+
+```bash
+cd api
+
+# All unit tests
+go test ./scoring/... ./handlers/...
+
+# Verbose output
+go test ./scoring/... ./handlers/... -v
+
+# Specific package
+go test ./scoring/... -v   # scoring engine (formula, decay, outlier, geo)
+go test ./handlers/... -v  # handler input validation
+
+# With coverage report
+go test ./scoring/... ./handlers/... -cover
+
+# Generate an HTML coverage report
+go test ./scoring/... ./handlers/... -coverprofile=coverage.out
+go tool cover -html=coverage.out
+```
+
+> **What the unit tests cover**
+> - `scoring/engine_test.go` — raw score formula (audio + manual), time-decay aggregation, flagged contribution weighting, outlier detection, Haversine distance
+> - `handlers/vibe_test.go` — `POST /v1/vibe` input validation (missing fields, bad manual ratings, malformed JSON)
+> - `handlers/places_test.go` — `GET /v1/places/nearby` parameter validation (missing/non-numeric lat & lng)
+> - `handlers/user_test.go` — `POST /v1/user/follow/:place_id` threshold validation
+
+### 4. Try it out
 
 ```bash
 # Nearby venues
