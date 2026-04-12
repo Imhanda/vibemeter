@@ -75,16 +75,6 @@ CROWD_INDICES = {
     133,  # Hubbub, speech noise
     134,  # Children playing
 }
-NOISE_INDICES = {
-    # Covers ambient / background hum
-    494,  # White noise
-    495,  # Pink noise
-    496,  # Throbbing
-    497,  # Hum
-    498,  # Electronic hum
-    40,   # Noise
-    41,   # Environmental noise
-}
 
 
 def _decode_to_pcm(data: bytes) -> np.ndarray:
@@ -112,27 +102,48 @@ def _decode_to_pcm(data: bytes) -> np.ndarray:
         os.unlink(tmp_path)
 
 
-def _group_scores(mean_scores: np.ndarray) -> dict:
+def _rms_to_ambient(waveform: np.ndarray) -> float:
     """
-    Aggregate per-class scores into the three vibe signals.
+    Compute ambient_db from raw waveform RMS energy.
 
-    mean_scores: shape (521,) — average YAMNet score across all 0.96s frames.
+    Using RMS instead of YAMNet classification scores because classification
+    tells us *what* is playing, not *how loud* the room actually is.
+
+    Phone mic dBFS calibration (float32 waveform, range -1.0 to +1.0):
+      Quiet living room / library:  RMS dBFS ~ -45 to -38  → ambient ~0.05–0.25
+      Busy restaurant / pub chat:   RMS dBFS ~ -28 to -18  → ambient ~0.35–0.60
+      Loud bar / club floor:        RMS dBFS ~ -12 to  -5  → ambient ~0.75–1.00
+
+    Floor = -50 dBFS, range = 45 dB — calibrated so a quiet home reads 0.0–0.2
+    rather than saturating at 1.0.
+    """
+    rms = float(np.sqrt(np.mean(waveform ** 2)))
+    if rms < 1e-9:
+        return 0.0
+    db = 20.0 * np.log10(rms)   # dBFS (negative; 0 = full scale)
+    DB_FLOOR = -50.0             # quieter than this → near-zero ambient
+    DB_RANGE = 45.0              # spans quiet room to loud club
+    ambient = (db - DB_FLOOR) / DB_RANGE
+    return float(max(0.0, min(ambient, 1.0)))
+
+
+def _group_scores(mean_scores: np.ndarray, waveform: np.ndarray) -> dict:
+    """
+    Derive the three vibe signals from YAMNet classification scores and raw waveform.
+
+    music_energy  — YAMNet music-class confidence (what fraction of frames had music)
+    crowd_energy  — YAMNet speech/crowd-class confidence
+    ambient_db    — RMS loudness of the room (independent of what's making the noise)
     """
     music_energy = float(np.sum(mean_scores[[i for i in MUSIC_INDICES if i < len(mean_scores)]]))
     crowd_energy = float(np.sum(mean_scores[[i for i in CROWD_INDICES if i < len(mean_scores)]]))
-    noise_raw    = float(np.sum(mean_scores[[i for i in NOISE_INDICES  if i < len(mean_scores)]]))
 
-    # Ambient = overall acoustic busyness (everything that isn't silence)
-    # Use the complement of silence class (index 494+ tends to be silence-adjacent).
-    # Simpler: ambient is normalised total energy excluding top-3 silence classes.
-    SILENCE_IDX = [494, 495, 496]
-    ambient_db = float(1.0 - np.sum(mean_scores[[i for i in SILENCE_IDX if i < len(mean_scores)]]))
-    ambient_db = max(0.0, min(ambient_db, 1.0))
-
-    # Cap and normalise — YAMNet scores per-class sum approaches 1 across all classes
-    # so per-group sums can exceed 1 when many related classes fire.
+    # Cap — per-group sums can exceed 1 when many related classes fire simultaneously
     music_energy = max(0.0, min(music_energy, 1.0))
     crowd_energy = max(0.0, min(crowd_energy, 1.0))
+
+    # ambient_db from RMS, not classification — avoids the "not silence = 100%" trap
+    ambient_db = _rms_to_ambient(waveform)
 
     return {
         "ambient_db": round(ambient_db, 4),
@@ -168,7 +179,7 @@ def analyse():
     scores, _, _ = MODEL(waveform)
     mean_scores = tf.reduce_mean(scores, axis=0).numpy()  # shape (521,)
 
-    signals = _group_scores(mean_scores)
+    signals = _group_scores(mean_scores, waveform)
     log.info("Analysed %d bytes → %s", len(audio_bytes), signals)
 
     return jsonify(signals)
