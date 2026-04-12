@@ -161,7 +161,11 @@ Scores are read from Redis — no Postgres hit on this path.
 
 - Docker + Docker Compose
 - Go 1.22+
-- Node.js 20+ (for mobile)
+- Node.js 18 LTS or 20 LTS (required by Expo SDK 54)
+- **Expo Go** app on your phone — install from [App Store](https://apps.apple.com/app/expo-go/id982107779) or [Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
+  - iOS: Expo Go **2.32+**
+  - Android: Expo Go **2.32+**
+  - Expo Go must support **SDK 54** (the current version supports the latest two SDK releases)
 
 ### 1. Start the data layer
 
@@ -180,7 +184,27 @@ SKIP_AUTH=true go run main.go
 # Listening on :8080
 ```
 
-### 3. Run the tests
+### 3. Run the mobile app (Expo Go)
+
+> Your phone and computer must be on the **same Wi-Fi network**.
+
+```bash
+cd mobile
+npm install          # first time only
+npm start            # starts the Expo dev server
+```
+
+Expo will print a QR code in the terminal.
+
+**iOS** — open the native Camera app, point it at the QR code, and tap the Expo Go banner.
+
+**Android** — open Expo Go, tap **Scan QR code**, and scan the code from the terminal.
+
+The app will bundle and launch on your device. Hot reloading is enabled by default — any file save refreshes the app instantly.
+
+> **Tip:** if the QR code scan fails, press `w` to open the dev tools in a browser and use the **Expo Go** deep-link button, or run `npm start -- --tunnel` to bypass local network restrictions.
+
+### 4. Run the tests
 
 Unit tests require no running infrastructure — no Postgres or Redis needed.
 
@@ -211,7 +235,7 @@ go tool cover -html=coverage.out
 > - `handlers/places_test.go` — `GET /v1/places/nearby` parameter validation (missing/non-numeric lat & lng)
 > - `handlers/user_test.go` — `POST /v1/user/follow/:place_id` threshold validation
 
-### 4. Try it out
+### 5. Try it out
 
 ```bash
 # Nearby venues
@@ -235,7 +259,7 @@ curl -X POST http://localhost:8080/v1/vibe \
 curl http://localhost:8080/v1/vibe/1 -H "X-User-ID: test-user"
 ```
 
-### Environment variables
+### 6. Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
