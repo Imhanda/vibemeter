@@ -64,28 +64,34 @@ Scores expire automatically from Redis after 3 hours via TTL — no cron job nee
 
 ```
 vibemeter/
-├── mobile/                  # React Native + Expo
-│   └── src/
-│       ├── screens/         # MapScreen, VenueDetail, CheckIn, Profile
-│       ├── audio/           # AudioCapture.ts, VibeExtractor.ts
-│       ├── api/             # rest.ts, websocket.ts
-│       └── store/           # Zustand state slices
-├── api/                     # Go backend
+├── mobile/                  # React Native + Expo SDK 54
+│   ├── src/
+│   │   ├── screens/         # VenueListScreen, VenueDetailScreen, CheckInScreen, ProfileScreen
+│   │   ├── components/      # VenueCard, VibeBadge
+│   │   ├── api/             # client.ts, places.ts, vibe.ts, user.ts, websocket.ts
+│   │   ├── store/           # useVibeStore.ts (Zustand)
+│   │   └── config.ts        # API_BASE_URL, DEFAULT_LOCATION, SKIP_AUTH
+│   ├── App.tsx              # Navigation (bottom tabs + native stack)
+│   ├── index.js             # Expo entry point
+│   └── app.json             # Expo config (SDK 54, mic permissions)
+├── api/                     # Go 1.22 + Gin REST API
 │   ├── config/              # Env-based configuration
 │   ├── cache/               # Redis client, venue score cache, pub/sub
-│   ├── db/                  # sqlx Postgres connection
-│   ├── handlers/            # vibe.go, places.go, user.go, ws.go
-│   ├── middleware/          # auth.go (Firebase JWT)
+│   ├── db/                  # sqlx Postgres connection pool
+│   ├── handlers/            # vibe.go, places.go, user.go, ws.go, analyse.go, admin.go
+│   ├── middleware/          # auth.go (Firebase JWT / SKIP_AUTH)
 │   ├── models/              # place.go, user.go, vibe.go
-│   ├── scoring/             # engine.go — decay aggregation, confidence, Haversine
+│   ├── scoring/             # engine.go — formula, decay, outlier, Haversine
 │   └── main.go
-├── infra/
-│   ├── docker-compose.yml   # Postgres 16 + PostGIS, Redis 7, pgAdmin
-│   ├── postgres/init.sql    # Full schema + seed data (30 Bengaluru venues)
-│   └── Dockerfile           # API container
-└── ml/
-    ├── models/              # yamnet.tflite, yamnet.mlmodel, bpm_head.tflite
-    └── notebooks/           # Weight tuning, signal exploration
+└── infra/
+    ├── docker-compose.yml   # Postgres, Redis, pgAdmin, YAMNet sidecar
+    ├── postgres/
+    │   ├── init.sql         # Full schema + 61 Bengaluru venue seeds
+    │   └── places_seed.csv  # Venue data from Google Places API
+    └── yamnet/              # Audio analysis sidecar (port 8082)
+        ├── app.py           # Flask + TensorFlow Hub YAMNet inference
+        ├── requirements.txt
+        └── Dockerfile
 ```
 
 ---
@@ -96,7 +102,8 @@ All endpoints require `Authorization: Bearer <firebase_jwt>`. Set `SKIP_AUTH=tru
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/v1/vibe` | Submit a vibe check-in |
+| `POST` | `/v1/vibe/analyse` | Upload 10s audio → YAMNet signals (crowd, music, ambient) |
+| `POST` | `/v1/vibe` | Submit a vibe check-in with audio signals or manual rating |
 | `GET` | `/v1/vibe/:place_id` | Venue detail + score history |
 | `GET` | `/v1/places/nearby` | Nearby venues with live scores |
 | `GET` | `/v1/user/profile` | Authenticated user profile + badges |
@@ -155,26 +162,46 @@ Scores are read from Redis — no Postgres hit on this path.
 
 ---
 
+## Services & ports
+
+| Service | Port | Description |
+|---|---|---|
+| **Go API** | `8080` | REST + WebSocket backend — run with `go run .` |
+| **Expo Metro** | `8081` | React Native dev bundler — started by `npx expo start` |
+| **YAMNet sidecar** | `8082` | Python Flask service running Google's YAMNet audio classifier |
+| **PostgreSQL** | `5432` | Primary database (Postgres 16 + PostGIS) — Docker |
+| **Redis** | `6379` | Score cache, rate-limiting counters, WebSocket pub/sub — Docker |
+| **pgAdmin** | `5050` | Database GUI — Docker (`vibe@admin.com` / `vibeadmin`) |
+
+> All Docker services are defined in `infra/docker-compose.yml`. The YAMNet sidecar runs as a Docker container (`infra/yamnet/`) and is proxied by the Go API at `POST /v1/vibe/analyse`.
+
+---
+
 ## Local development
 
 ### Prerequisites
 
 - Docker + Docker Compose
 - Go 1.22+
-- Node.js 18 LTS or 20 LTS (required by Expo SDK 54)
+- Node.js >=20.19.4 (required by Expo SDK 54) — use [nvm](https://github.com/nvm-sh/nvm): `nvm install 20.19.4 && nvm use 20.19.4`
 - **Expo Go** app on your phone — install from [App Store](https://apps.apple.com/app/expo-go/id982107779) or [Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
-  - iOS: Expo Go **2.32+**
-  - Android: Expo Go **2.32+**
-  - Expo Go must support **SDK 54** (the current version supports the latest two SDK releases)
+  - Expo Go must support **SDK 54**
 
-### 1. Start the data layer
+### 1. Start the data layer + YAMNet sidecar
 
 ```bash
 cd infra
 docker compose up -d
 ```
 
-This starts Postgres 16 + PostGIS, Redis 7, and pgAdmin (at `localhost:5050`). The schema and seed data (3 Bengaluru venues) are applied automatically from `infra/postgres/init.sql`.
+This starts Postgres 16 + PostGIS, Redis 7, pgAdmin (`localhost:5050`), and the YAMNet audio analysis sidecar (`localhost:8082`). The schema and 61 Bengaluru venue seeds are applied automatically from `infra/postgres/init.sql`.
+
+Verify the sidecar is ready:
+
+```bash
+curl http://localhost:8082/health
+# → {"status":"ok"}
+```
 
 ### 2. Run the API
 
@@ -265,12 +292,13 @@ curl http://localhost:8080/v1/vibe/1 -H "X-User-ID: test-user"
 |---|---|---|
 | `DATABASE_URL` | `postgres://vibemeter:vibemeter@localhost:5432/vibemeter?sslmode=disable` | Postgres connection string |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
+| `YAMNET_URL` | `http://localhost:8082` | YAMNet sidecar base URL |
 | `FIREBASE_PROJECT_ID` | — | Required in production for JWT validation |
-| `GOOGLE_PLACES_API_KEY` | — | Backend key for venue metadata |
+| `GOOGLE_PLACES_API_KEY` | — | Backend key for venue metadata sync |
 | `GEO_FENCE_RADIUS_M` | `300` | Max metres from venue to check in |
 | `SCORE_WINDOW_MINUTES` | `180` | Rolling window for score aggregation |
 | `RATE_LIMIT_MAX` | `2` | Max audio check-ins per user per venue per hour |
-| `SKIP_AUTH` | `false` | Set `true` locally; reads `X-User-ID` header |
+| `SKIP_AUTH` | `false` | Set `true` locally; reads `X-User-ID` header instead of Firebase JWT |
 | `PORT` | `8080` | API listen port |
 
 ---
@@ -287,9 +315,9 @@ curl http://localhost:8080/v1/vibe/1 -H "X-User-ID: test-user"
 
 ## Privacy
 
-- **No raw audio transmitted** — the API accepts only three floats per check-in. Reconstructing audio from these values is architecturally impossible.
-- **No voice transcription** — the Speech Activity Detector produces a single float (presence density), not words or identities.
-- **No audio persistence** — the PCM buffer lives in memory for <2 seconds during ML inference, then is discarded. Never written to disk.
+- **Minimal audio transmission** — 10 seconds of audio is uploaded to the backend solely for YAMNet classification. No audio is stored in a database or object storage.
+- **In-memory processing only** — the YAMNet sidecar receives audio bytes, runs inference in RAM, and returns three floats. The audio is discarded immediately after analysis — never written to disk.
+- **No voice transcription** — YAMNet classifies sound categories (music, crowd, noise), not speech content or speaker identity.
 - **Microphone scope** — permission is requested only when the user taps Check the Vibe. No background access.
 - **GDPR / DPDPA** — a user deletion request is satisfied by deleting their rows from `vibe_contributions` and `users`. No audio to purge.
 

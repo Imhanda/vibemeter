@@ -10,7 +10,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.vibemeter.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "VibeMeter listens for 10 seconds to score the venue vibe. No audio is recorded or transmitted."
+        "NSMicrophoneUsageDescription": "VibeMeter records 10 seconds of ambient audio and transmits it to a processing server to classify music, crowd, and ambient sound levels. The audio is analysed in memory and discarded immediately — it is never stored."
       }
     },
     "android": {

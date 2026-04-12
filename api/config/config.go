@@ -10,6 +10,7 @@ type Config struct {
 	RedisURL           string
 	FirebaseProjectID  string
 	GooglePlacesAPIKey string
+	YAMNetURL          string
 	GeoFenceRadiusM    float64
 	ScoreWindowMinutes int
 	RateLimitMax       int
@@ -25,6 +26,7 @@ func Load() {
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
 		FirebaseProjectID:  getEnv("FIREBASE_PROJECT_ID", ""),
 		GooglePlacesAPIKey: getEnv("GOOGLE_PLACES_API_KEY", ""),
+		YAMNetURL:          getEnv("YAMNET_URL", "http://localhost:8082"),
 		GeoFenceRadiusM:    getEnvFloat("GEO_FENCE_RADIUS_M", 300),
 		ScoreWindowMinutes: getEnvInt("SCORE_WINDOW_MINUTES", 180),
 		RateLimitMax:       getEnvInt("RATE_LIMIT_MAX", 2),

@@ -22,6 +22,13 @@ services:
     ports:
       - "6379:6379"
 
+  yamnet:
+    build: ./yamnet
+    container_name: vibemeter-yamnet
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+
   pgadmin:
     image: dpage/pgadmin4
     container_name: vibemeter-pgadmin
