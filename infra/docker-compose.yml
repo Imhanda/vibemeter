@@ -14,6 +14,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres/places_seed.csv:/docker-entrypoint-initdb.d/places_seed.csv
 
   redis:
     image: redis:7

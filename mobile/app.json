@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "VibeMeter",
+    "slug": "vibemeter",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.vibemeter.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "VibeMeter listens for 10 seconds to score the venue vibe. No audio is recorded or transmitted."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f0f14"
+      },
+      "package": "com.vibemeter.app",
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
+    },
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-asset"
+    ]
+  }
+}

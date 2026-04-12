@@ -41,6 +41,12 @@ func main() {
 		v1.GET("/ws", handlers.WSHandler)
 	}
 
+	// Admin — one-time or manual pull from Google Places API
+	admin := r.Group("/v1/admin", middleware.AuthMiddleware())
+	{
+		admin.POST("/places/sync", handlers.SyncPlaces)
+	}
+
 	log.Printf("VibeMeter API starting on :%s\n", config.C.Port)
 	if err := r.Run(":" + config.C.Port); err != nil {
 		log.Fatal(err)

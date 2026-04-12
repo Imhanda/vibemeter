@@ -107,18 +107,30 @@ CREATE TABLE notification_subscriptions (
 );
 
 -- =========================
--- SEED DATA
+-- SEED DATA (from places_seed.csv — 61 Bengaluru nightlife venues)
 -- =========================
-INSERT INTO places (id, name, lat, lng, location, type, address)
-VALUES
-('1', 'Toit Brewpub', 12.9716, 77.6400,
-  ST_SetSRID(ST_MakePoint(77.6400, 12.9716), 4326),
-  'pub', 'Indiranagar'),
 
-('2', 'Arbor Brewing Company', 12.9718, 77.6405,
-  ST_SetSRID(ST_MakePoint(77.6405, 12.9718), 4326),
-  'bar', 'Brigade Road'),
+-- Stage the CSV into a temp table, then upsert with PostGIS geometry.
+CREATE TEMP TABLE places_import (
+  id        TEXT,
+  name      TEXT,
+  lat       DOUBLE PRECISION,
+  lng       DOUBLE PRECISION,
+  type      TEXT,
+  address   TEXT,
+  photo_url TEXT
+);
 
-('3', 'Skyye Lounge', 12.9750, 77.6030,
-  ST_SetSRID(ST_MakePoint(77.6030, 12.9750), 4326),
-  'club', 'UB City');
+COPY places_import (id, name, lat, lng, type, address, photo_url)
+FROM '/docker-entrypoint-initdb.d/places_seed.csv'
+WITH (FORMAT csv, HEADER true);
+
+INSERT INTO places (id, name, lat, lng, location, type, address, photo_url)
+SELECT
+  id, name, lat, lng,
+  ST_SetSRID(ST_MakePoint(lng, lat), 4326),
+  type, address, photo_url
+FROM places_import
+ON CONFLICT (id) DO NOTHING;
+
+DROP TABLE places_import;

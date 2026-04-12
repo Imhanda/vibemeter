@@ -1,0 +1,52 @@
+# Environment & secrets
+.env
+.env.*
+*.secret
+*.pem
+*.key
+*.crt
+secrets/
+
+# Go
+api/vibemeter
+api/*.exe
+api/*.test
+api/vendor/
+api/tmp/
+
+# Node / React Native (mobile)
+node_modules/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/build/
+mobile/.cache/
+mobile/android/
+mobile/ios/
+mobile/.env
+mobile/.env.*
+
+# Python / ML
+ml/__pycache__/
+ml/*.pyc
+ml/*.pyo
+ml/.venv/
+ml/venv/
+ml/*.egg-info/
+
+# Docker
+infra/pgadmin/sessions/
+
+# IDE & OS
+.vscode/settings.json
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+*.out
