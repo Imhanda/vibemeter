@@ -177,116 +177,189 @@ Scores are read from Redis — no Postgres hit on this path.
 
 ---
 
-## Local development
+## Running the app locally
 
-### Prerequisites
+> This section is written for anyone setting up VibeMeter for the first time — no prior engineering experience assumed.
 
-- Docker + Docker Compose
-- Go 1.22+
-- Node.js >=20.19.4 (required by Expo SDK 54) — use [nvm](https://github.com/nvm-sh/nvm): `nvm install 20.19.4 && nvm use 20.19.4`
-- **Expo Go** app on your phone — install from [App Store](https://apps.apple.com/app/expo-go/id982107779) or [Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
-  - Expo Go must support **SDK 54**
+---
 
-### 1. Start the data layer + YAMNet sidecar
+### What you need to install (one time only)
+
+#### 1. Docker Desktop
+Docker runs the database, cache, and audio analysis service in containers so you don't need to install them manually.
+
+Download and install from: https://www.docker.com/products/docker-desktop
+
+After installing, open **Docker Desktop** and leave it running in the background.
+
+#### 2. Go
+The backend API is written in Go.
+
+Download from: https://go.dev/dl/ — install version **1.22 or higher**.
+
+Verify it works:
+```bash
+go version
+# should print: go version go1.22.x ...
+```
+
+#### 3. Node.js (via nvm)
+The mobile app build tool (Expo) requires Node.js version **20.19.4 or higher**.
+
+Install nvm (Node version manager) first:
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+```
+
+Restart your terminal, then install and activate the correct Node version:
+```bash
+nvm install 20.19.4
+nvm use 20.19.4
+```
+
+Verify:
+```bash
+node --version
+# should print: v20.19.4
+```
+
+#### 4. Expo Go on your phone
+Install the **Expo Go** app on your iPhone or Android phone:
+- iPhone: [App Store — Expo Go](https://apps.apple.com/app/expo-go/id982107779)
+- Android: [Google Play — Expo Go](https://play.google.com/store/apps/details?id=host.exp.exponent)
+
+> Your phone and your Mac/PC must be on the **same Wi-Fi network** for the app to connect.
+
+---
+
+### Starting everything up
+
+Open a terminal and follow these steps in order. Each step needs its own terminal tab.
+
+#### Step 1 — Start the backend services (Terminal tab 1)
 
 ```bash
-cd infra
+cd vibemeter/infra
 docker compose up -d
 ```
 
-This starts Postgres 16 + PostGIS, Redis 7, pgAdmin (`localhost:5050`), and the YAMNet audio analysis sidecar (`localhost:8082`). The schema and 61 Bengaluru venue seeds are applied automatically from `infra/postgres/init.sql`.
+This starts the database, cache, and the audio analysis service. The first time you run this it will download Docker images — it may take 3–5 minutes.
 
-Verify the sidecar is ready:
+Wait until all containers show as **running**:
+```bash
+docker compose ps
+```
 
+You should see `vibemeter-postgres`, `vibemeter-redis`, `vibemeter-yamnet`, and `vibemeter-pgadmin` all with status `Up`.
+
+Confirm the audio analysis service is ready:
 ```bash
 curl http://localhost:8082/health
-# → {"status":"ok"}
+# should return: {"status":"ok"}
 ```
 
-### 2. Run the API
+> If the yamnet container is still starting up, wait 30 seconds and try again.
+
+#### Step 2 — Start the API server (Terminal tab 2)
 
 ```bash
-cd api
-SKIP_AUTH=true go run main.go
-# Listening on :8080
+cd vibemeter/api
+SKIP_AUTH=true go run .
 ```
 
-### 3. Run the mobile app (Expo Go)
+You should see:
+```
+Connected to DB
+Connected to Redis
+VibeMeter API starting on :8080
+```
 
-> Your phone and computer must be on the **same Wi-Fi network**.
+Leave this terminal running.
+
+Confirm the API is up:
+```bash
+curl http://localhost:8080/health
+# should return: {"status":"ok"}
+```
+
+#### Step 3 — Start the mobile app (Terminal tab 3)
 
 ```bash
-cd mobile
-npm install          # first time only
-npm start            # starts the Expo dev server
+cd vibemeter/mobile
+source ~/.nvm/nvm.sh && nvm use 20.19.4
+npm install          # first time only — downloads app dependencies
+npx expo start --clear
 ```
 
-Expo will print a QR code in the terminal.
+A QR code will appear in the terminal.
 
-**iOS** — open the native Camera app, point it at the QR code, and tap the Expo Go banner.
+**iPhone** — open the native Camera app, point it at the QR code, and tap the **Open in Expo Go** banner that appears.
 
-**Android** — open Expo Go, tap **Scan QR code**, and scan the code from the terminal.
+**Android** — open Expo Go, tap **Scan QR code**, and scan the code.
 
-The app will bundle and launch on your device. Hot reloading is enabled by default — any file save refreshes the app instantly.
+The app will download and launch on your device (takes ~30 seconds the first time). The VibeMeter logo will appear, then the venue list.
 
-> **Tip:** if the QR code scan fails, press `w` to open the dev tools in a browser and use the **Expo Go** deep-link button, or run `npm start -- --tunnel` to bypass local network restrictions.
+---
 
-### 4. Run the tests
+### Using the app
 
-Unit tests require no running infrastructure — no Postgres or Redis needed.
+1. **Venue list** — browse nearby Bengaluru nightlife venues with their current vibe scores
+2. **Tap a venue** — see the live score, signal breakdown (music / crowd / ambient), and check-in history
+3. **Check the Vibe** — tap the button on any venue detail page to submit a vibe check-in:
+   - **Listen tab** — tap the mic, hold your phone up for 10 seconds, get real audio scores from YAMNet
+   - **Rate tab** — pick an emoji (💤 to 🔥) as a quick manual rating
+4. **Profile** — see your check-in count, streak, and earned badges
+
+---
+
+### Stopping everything
 
 ```bash
-cd api
+# Stop the Expo dev server
+# Press Ctrl+C in terminal tab 3
 
-# All unit tests
-go test ./scoring/... ./handlers/...
+# Stop the API server
+# Press Ctrl+C in terminal tab 2
 
-# Verbose output
-go test ./scoring/... ./handlers/... -v
-
-# Specific package
-go test ./scoring/... -v   # scoring engine (formula, decay, outlier, geo)
-go test ./handlers/... -v  # handler input validation
-
-# With coverage report
-go test ./scoring/... ./handlers/... -cover
-
-# Generate an HTML coverage report
-go test ./scoring/... ./handlers/... -coverprofile=coverage.out
-go tool cover -html=coverage.out
+# Stop Docker services
+cd vibemeter/infra
+docker compose down
 ```
 
-> **What the unit tests cover**
-> - `scoring/engine_test.go` — raw score formula (audio + manual), time-decay aggregation, flagged contribution weighting, outlier detection, Haversine distance
-> - `handlers/vibe_test.go` — `POST /v1/vibe` input validation (missing fields, bad manual ratings, malformed JSON)
-> - `handlers/places_test.go` — `GET /v1/places/nearby` parameter validation (missing/non-numeric lat & lng)
-> - `handlers/user_test.go` — `POST /v1/user/follow/:place_id` threshold validation
+---
 
-### 5. Try it out
+### Starting fresh (if something is broken)
 
 ```bash
-# Nearby venues
-curl "http://localhost:8080/v1/places/nearby?lat=12.9716&lng=77.6400&radius=500" \
-  -H "X-User-ID: test-user"
+cd vibemeter/infra
 
-# Submit a vibe check-in
-curl -X POST http://localhost:8080/v1/vibe \
-  -H "X-User-ID: test-user" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "place_id":     "1",
-    "crowd_energy": 0.8,
-    "music_energy": 0.7,
-    "ambient_db":   0.6,
-    "client_lat":   12.9716,
-    "client_lng":   77.6400
-  }'
+# Stop and remove all containers + data (resets the database)
+docker compose down -v
 
-# Venue detail
-curl http://localhost:8080/v1/vibe/1 -H "X-User-ID: test-user"
+# Rebuild and restart everything from scratch
+docker compose up --build -d
 ```
 
-### 6. Environment variables
+Then restart the API and Expo as above.
+
+---
+
+### Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| App shows "Network request failed" | Make sure your phone and Mac are on the same Wi-Fi network. Check that the API is running on port 8080. |
+| QR code scan fails | Try `npx expo start --tunnel` instead — this routes through Expo's servers and bypasses local network restrictions. |
+| Port 8081 already in use | Run `kill $(lsof -ti :8081)` then restart Expo. |
+| Docker containers not starting | Make sure Docker Desktop is open and running. |
+| YAMNet health check fails | The model takes ~60 seconds to load on first start. Wait and retry. |
+| Old icon/splash still showing | Force-close Expo Go on your phone, clear its cache in Settings, then re-scan the QR code. |
+
+---
+
+### Developer environment variables
+
+These are only needed if you are changing API behaviour:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -300,6 +373,18 @@ curl http://localhost:8080/v1/vibe/1 -H "X-User-ID: test-user"
 | `RATE_LIMIT_MAX` | `2` | Max audio check-ins per user per venue per hour |
 | `SKIP_AUTH` | `false` | Set `true` locally; reads `X-User-ID` header instead of Firebase JWT |
 | `PORT` | `8080` | API listen port |
+
+---
+
+### Running the backend tests
+
+```bash
+cd vibemeter/api
+go test ./scoring/... ./handlers/...
+
+# With coverage
+go test ./scoring/... ./handlers/... -cover
+```
 
 ---
 

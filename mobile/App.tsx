@@ -1,14 +1,15 @@
-import React from "react";
+import React, { useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Text } from "react-native";
+import { Text, TouchableOpacity } from "react-native";
 
 import { VenueListScreen } from "./src/screens/VenueListScreen";
 import { VenueDetailScreen } from "./src/screens/VenueDetailScreen";
 import { CheckInScreen } from "./src/screens/CheckInScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
+import { SplashScreen } from "./src/screens/SplashScreen";
 
 // ── Navigator param types ─────────────────────────────────────────────────────
 
@@ -52,7 +53,15 @@ function VenueStack() {
       <Stack.Screen
         name="CheckIn"
         component={CheckInScreen}
-        options={{ title: "Check the Vibe", presentation: "modal" }}
+        options={({ navigation }) => ({
+          title: "Check the Vibe",
+          presentation: "modal",
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12}>
+              <Text style={{ color: "#14b8a6", fontSize: 16 }}>Cancel</Text>
+            </TouchableOpacity>
+          ),
+        })}
       />
     </Stack.Navigator>
   );
@@ -93,6 +102,17 @@ function Tabs() {
 // ── Root ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
+  if (showSplash) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <SplashScreen onDone={() => setShowSplash(false)} />
+      </>
+    );
+  }
+
   return (
     <NavigationContainer>
       <StatusBar style="light" />
