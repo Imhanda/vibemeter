@@ -1,7 +1,19 @@
-// Central place to change the API base URL.
-// Point to your local Go server when running on a simulator,
-// or your deployed Cloud Run URL in production.
-export const API_BASE_URL = "http://192.168.1.5:8080";
+import Constants from "expo-constants";
+
+// Derive the API host from the Expo dev server's own IP at runtime.
+// This means you never need to hardcode or update the IP when your
+// Mac changes networks — the QR code already knows the right address.
+function getApiBaseUrl(): string {
+  const hostUri = Constants.expoConfig?.hostUri; // e.g. "192.168.1.15:8081"
+  if (hostUri) {
+    const host = hostUri.split(":")[0]; // strip the Metro port
+    return `http://${host}:8080`;
+  }
+  // Fallback for production builds or CI
+  return "http://localhost:8080";
+}
+
+export const API_BASE_URL = getApiBaseUrl();
 
 // Hardcoded Bengaluru centre — swap for real device GPS in a later sprint.
 export const DEFAULT_LOCATION = {

@@ -291,6 +291,8 @@ npm install          # first time only — downloads app dependencies
 npx expo start --clear
 ```
 
+> The app automatically detects your Mac's IP address from the Expo dev server — you never need to hardcode or update it manually, even when you change Wi-Fi networks.
+
 A QR code will appear in the terminal.
 
 **iPhone** — open the native Camera app, point it at the QR code, and tap the **Open in Expo Go** banner that appears.
@@ -348,7 +350,7 @@ Then restart the API and Expo as above.
 
 | Problem | Fix |
 |---|---|
-| App shows "Network request failed" | Make sure your phone and Mac are on the same Wi-Fi network. Check that the API is running on port 8080. |
+| App shows "Network request failed" | Make sure your phone and Mac are on the same Wi-Fi network and the API is running (`curl http://localhost:8080/health`). The app detects your Mac's IP automatically from the Expo dev server — no manual IP update needed. |
 | QR code scan fails | Try `npx expo start --tunnel` instead — this routes through Expo's servers and bypasses local network restrictions. |
 | Port 8081 already in use | Run `kill $(lsof -ti :8081)` then restart Expo. |
 | Docker containers not starting | Make sure Docker Desktop is open and running. |
