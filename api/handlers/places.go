@@ -116,7 +116,7 @@ func GetNearbyPlaces(c *gin.Context) {
 		}
 
 		if vs, err := cache.GetVenueScore(c.Request.Context(), row.ID); err == nil && vs != nil {
-			score := vs.VibeScore
+			score := vs.Score
 			conf := vs.Confidence
 			if score >= minScore {
 				resp.VibeScore = &score

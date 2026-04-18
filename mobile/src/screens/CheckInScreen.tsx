@@ -282,6 +282,17 @@ export function CheckInScreen({ route, navigation }: Props) {
                 <SignalBar label="👥 Crowd" value={signals.crowd_energy} />
                 <SignalBar label="🔊 Ambient" value={signals.ambient_db} />
               </View>
+              <View style={styles.scorePreviewBox}>
+                <Text style={styles.scorePreviewLabel}>Estimated vibe score</Text>
+                <Text style={styles.scorePreviewValue}>
+                  {Math.round(
+                    (0.55 * signals.crowd_energy +
+                      0.40 * signals.music_energy +
+                      0.05 * signals.ambient_db) * 100
+                  )}
+                </Text>
+                <Text style={styles.scorePreviewSub}>out of 100 — submit to update the venue</Text>
+              </View>
               <TouchableOpacity onPress={() => { setRecordState("idle"); setSignals(null); }}>
                 <Text style={styles.cancelText}>Record again</Text>
               </TouchableOpacity>
@@ -393,4 +404,8 @@ const styles = StyleSheet.create({
   badgeText: { color: "#f59e0b", fontSize: 14, fontWeight: "600" },
   doneBtn: { marginTop: 16, backgroundColor: "#14b8a6", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 40 },
   doneBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  scorePreviewBox: { alignItems: "center", backgroundColor: "#1a1a22", borderRadius: 14, paddingVertical: 14, paddingHorizontal: 28, marginVertical: 4 },
+  scorePreviewLabel: { color: "#aaa", fontSize: 12, marginBottom: 4 },
+  scorePreviewValue: { color: "#14b8a6", fontSize: 52, fontWeight: "800", lineHeight: 56 },
+  scorePreviewSub: { color: "#555", fontSize: 11, marginTop: 2, textAlign: "center" },
 });

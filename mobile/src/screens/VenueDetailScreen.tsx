@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getVenueDetail, VenueDetail } from "../api/places";
+import { getVenueDetail, getVibeSummary, VenueDetail, VibeSummary } from "../api/places";
 import { VenueSocket, ScoreUpdateEvent } from "../api/websocket";
 import { VibeBadge, confidenceBadge } from "../components/VibeBadge";
 import { useVibeStore } from "../store/useVibeStore";
@@ -21,6 +21,7 @@ export function VenueDetailScreen({ route, navigation }: Props) {
   const [venue, setVenue] = useState<VenueDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<VibeSummary | null>(null);
   const socketRef = useRef<VenueSocket | null>(null);
   const { updateVenueScore } = useVibeStore();
 
@@ -30,6 +31,8 @@ export function VenueDetailScreen({ route, navigation }: Props) {
     try {
       const data = await getVenueDetail(placeId);
       setVenue(data);
+      // Fetch AI summary in parallel — fail silently if no check-ins yet
+      getVibeSummary(placeId).then(setSummary).catch(() => {});
     } catch (e: any) {
       setError(e.message ?? "Failed to load venue");
     } finally {
@@ -96,6 +99,21 @@ export function VenueDetailScreen({ route, navigation }: Props) {
           {venue.check_in_count} check-in{venue.check_in_count !== 1 ? "s" : ""} in the last 3 hours
         </Text>
       </View>
+
+      {/* AI vibe summary */}
+      {summary && (
+        <View style={[
+          styles.summaryBox,
+          summary.tone === "lively" ? styles.summaryLively
+            : summary.tone === "moderate" ? styles.summaryModerate
+            : styles.summaryQuiet,
+        ]}>
+          <Text style={styles.summaryIcon}>
+            {summary.tone === "lively" ? "🔥" : summary.tone === "moderate" ? "⚡" : "💤"}
+          </Text>
+          <Text style={styles.summaryText}>{summary.summary}</Text>
+        </View>
+      )}
 
       {/* Check in button */}
       <TouchableOpacity
@@ -184,4 +202,10 @@ const styles = StyleSheet.create({
   errorText: { color: "#ef4444", fontSize: 14 },
   retryBtn: { backgroundColor: "#1a1a22", borderRadius: 8, paddingHorizontal: 20, paddingVertical: 8 },
   retryText: { color: "#14b8a6", fontWeight: "600" },
+  summaryBox: { flexDirection: "row", alignItems: "center", gap: 10, marginHorizontal: 20, marginBottom: 16, borderRadius: 12, padding: 14 },
+  summaryLively: { backgroundColor: "#1a0f0a", borderWidth: 1, borderColor: "#ef4444" },
+  summaryModerate: { backgroundColor: "#0f140a", borderWidth: 1, borderColor: "#f59e0b" },
+  summaryQuiet: { backgroundColor: "#0a0f14", borderWidth: 1, borderColor: "#3b82f6" },
+  summaryIcon: { fontSize: 22 },
+  summaryText: { flex: 1, color: "#ddd", fontSize: 13, lineHeight: 18 },
 });

@@ -42,3 +42,12 @@ export function getNearbyVenues(
 export function getVenueDetail(placeId: string): Promise<VenueDetail> {
   return api.get<VenueDetail>(`/v1/vibe/${placeId}`);
 }
+
+export interface VibeSummary {
+  summary: string;
+  tone: "lively" | "moderate" | "quiet";
+}
+
+export function getVibeSummary(placeId: string): Promise<VibeSummary> {
+  return api.get<VibeSummary>(`/v1/vibe/${placeId}/summary`);
+}

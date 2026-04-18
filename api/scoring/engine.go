@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	CrowdEnergyWeight = 0.40
-	MusicEnergyWeight = 0.35
-	AmbientDBWeight   = 0.25
+	CrowdEnergyWeight = 0.55
+	MusicEnergyWeight = 0.40
+	AmbientDBWeight   = 0.05
 	ManualWeight      = 0.70
 	DecayLambda       = 0.0077 // at 90 min → weight ≈ 0.50; at 180 min → weight ≈ 0.25
 	OutlierThreshold  = 40.0

@@ -22,7 +22,7 @@ Scores decay over 3 hours, so the data always reflects the present moment.
 ## Scoring
 
 ```
-raw_score = (0.40 × crowd_energy + 0.35 × music_energy + 0.25 × ambient_db) × 100
+raw_score = (0.55 × crowd_energy + 0.40 × music_energy + 0.05 × ambient_db) × 100
 ```
 
 Multiple check-ins are aggregated with exponential time-decay weighting:

@@ -14,10 +14,13 @@ import (
 var RDB *redis.Client
 
 type VenueScore struct {
-	VibeScore    float64   `json:"vibe_score"`
+	Score        float64   `json:"vibe_score"`
 	Confidence   float64   `json:"confidence"`
 	CheckInCount int       `json:"check_in_count"`
 	LastUpdated  time.Time `json:"last_updated"`
+	CrowdEnergy  float64   `json:"crowd_energy"`
+	MusicEnergy  float64   `json:"music_energy"`
+	AmbientDB    float64   `json:"ambient_db"`
 }
 
 const venueScoreTTL = 3 * time.Hour

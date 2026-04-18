@@ -11,6 +11,7 @@ type Config struct {
 	FirebaseProjectID  string
 	GooglePlacesAPIKey string
 	YAMNetURL          string
+	AnthropicAPIKey    string
 	GeoFenceRadiusM    float64
 	ScoreWindowMinutes int
 	RateLimitMax       int
@@ -27,6 +28,7 @@ func Load() {
 		FirebaseProjectID:  getEnv("FIREBASE_PROJECT_ID", ""),
 		GooglePlacesAPIKey: getEnv("GOOGLE_PLACES_API_KEY", ""),
 		YAMNetURL:          getEnv("YAMNET_URL", "http://localhost:8082"),
+		AnthropicAPIKey:    getEnv("ANTHROPIC_API_KEY", ""),
 		GeoFenceRadiusM:    getEnvFloat("GEO_FENCE_RADIUS_M", 300),
 		ScoreWindowMinutes: getEnvInt("SCORE_WINDOW_MINUTES", 180),
 		RateLimitMax:       getEnvInt("RATE_LIMIT_MAX", 2),

@@ -45,36 +45,28 @@ _csv = requests.get(CLASS_MAP_URL, timeout=10).text.splitlines()
 CLASS_NAMES = [row.split(",")[2].strip('"') for row in _csv[1:]]  # skip header
 log.info("YAMNet ready — %d classes", len(CLASS_NAMES))
 
-# AudioSet class indices we care about (stable across YAMNet versions)
-MUSIC_INDICES = {
-    137,  # Music
-    138,  # Musical instrument
-    139,  # Plucked string instrument
-    140,  # Guitar
-    151,  # Percussion
-    153,  # Drum
-    155,  # Bass drum
-    160,  # Keyboard (musical)
-    163,  # Piano
-    64,   # Music of Africa
-    68,   # Pop music
-    71,   # Rock music
-    80,   # Electronic music
-    85,   # Hip hop music
-    94,   # Techno
+# Build index sets from class names — immune to index shifts across YAMNet versions.
+MUSIC_CLASS_KEYWORDS = {
+    "music", "singing", "song", "musical instrument", "guitar", "piano",
+    "drum", "percussion", "bass", "pop music", "rock music", "rock and roll",
+    "electronic music", "hip hop", "techno", "jazz", "reggae", "soul music",
+    "exciting music", "happy music", "ska", "latin", "maraca", "rattle",
 }
-CROWD_INDICES = {
-    0,    # Speech
-    1,    # Male speech, man speaking
-    2,    # Female speech, woman speaking
-    3,    # Child speech, kid speaking
-    4,    # Conversation
-    5,    # Narration, monologue
-    6,    # Babbling
-    132,  # Crowd
-    133,  # Hubbub, speech noise
-    134,  # Children playing
+CROWD_CLASS_KEYWORDS = {
+    "speech", "speaking", "conversation", "crowd", "hubbub", "chatter",
+    "babbling", "narration", "children playing", "cheering", "laughter",
 }
+
+def _build_indices(class_names, keywords):
+    return {
+        i for i, name in enumerate(class_names)
+        if any(kw in name.lower() for kw in keywords)
+    }
+
+MUSIC_INDICES = _build_indices(CLASS_NAMES, MUSIC_CLASS_KEYWORDS)
+CROWD_INDICES = _build_indices(CLASS_NAMES, CROWD_CLASS_KEYWORDS)
+log.info("Music indices (%d): %s", len(MUSIC_INDICES), sorted(MUSIC_INDICES))
+log.info("Crowd indices (%d): %s", len(CROWD_INDICES), sorted(CROWD_INDICES))
 
 
 def _decode_to_pcm(data: bytes) -> np.ndarray:
@@ -121,10 +113,18 @@ def _rms_to_ambient(waveform: np.ndarray) -> float:
     if rms < 1e-9:
         return 0.0
     db = 20.0 * np.log10(rms)   # dBFS (negative; 0 = full scale)
-    DB_FLOOR = -50.0             # quieter than this → near-zero ambient
-    DB_RANGE = 45.0              # spans quiet room to loud club
-    ambient = (db - DB_FLOOR) / DB_RANGE
-    return float(max(0.0, min(ambient, 1.0)))
+    DB_FLOOR = -40.0             # cooler/AC hum (~-38 dBFS) sits near the floor
+    DB_RANGE = 35.0              # 35 dB span: quiet home → loud club (-40 to -5)
+    linear = (db - DB_FLOOR) / DB_RANGE
+    linear = max(0.0, min(linear, 1.0))
+    # Power curve (^2.5) compresses mid-range so phone AGC-amplified appliances
+    # (cooler, AC, TV hum) don't score high. Only a genuinely loud venue
+    # (bar, club) pushes the curve toward 1.0.
+    #   cooler @ linear ~0.70  → ambient 0.70^2.5 ≈ 0.41
+    #   busy pub @ linear ~0.85 → ambient 0.85^2.5 ≈ 0.66
+    #   loud club @ linear ~0.95 → ambient 0.95^2.5 ≈ 0.88
+    ambient = linear ** 2.5
+    return float(ambient)
 
 
 def _group_scores(mean_scores: np.ndarray, waveform: np.ndarray) -> dict:
@@ -178,6 +178,11 @@ def analyse():
     # Run YAMNet — returns (scores, embeddings, spectrogram)
     scores, _, _ = MODEL(waveform)
     mean_scores = tf.reduce_mean(scores, axis=0).numpy()  # shape (521,)
+
+    # Log top 10 classes to help diagnose misclassification
+    top10_idx = np.argsort(mean_scores)[::-1][:10]
+    top10 = [(CLASS_NAMES[i], round(float(mean_scores[i]), 4)) for i in top10_idx]
+    log.info("Top classes: %s", top10)
 
     signals = _group_scores(mean_scores, waveform)
     log.info("Analysed %d bytes → %s", len(audio_bytes), signals)

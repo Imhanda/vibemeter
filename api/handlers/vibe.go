@@ -153,11 +153,15 @@ func SubmitVibe(c *gin.Context) {
 	venueScore, confidence := scoring.AggregateWithDecay(allRecent, time.Now())
 
 	// --- Update Redis ---
+	// crowd, music, ambient already populated from the scoring block above
 	vs := cache.VenueScore{
-		VibeScore:    venueScore,
+		Score:        venueScore,
 		Confidence:   confidence,
 		CheckInCount: len(allRecent),
 		LastUpdated:  time.Now(),
+		CrowdEnergy:  crowd,
+		MusicEnergy:  music,
+		AmbientDB:    ambient,
 	}
 	if err := cache.SetVenueScore(ctx, req.PlaceID, vs); err != nil {
 		log.Println("redis set error:", err)
@@ -226,7 +230,7 @@ func GetVenueVibe(c *gin.Context) {
 	}
 
 	if vs != nil {
-		score := vs.VibeScore
+		score := vs.Score
 		conf := vs.Confidence
 		resp.VibeScore = &score
 		resp.Confidence = &conf

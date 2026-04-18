@@ -29,6 +29,7 @@ func main() {
 		// Vibe
 		v1.POST("/vibe", handlers.SubmitVibe)
 		v1.GET("/vibe/:place_id", handlers.GetVenueVibe)
+		v1.GET("/vibe/:place_id/summary", handlers.GetVibeSummary)
 		v1.POST("/vibe/analyse", handlers.AnalyseAudio)
 
 		// Places
