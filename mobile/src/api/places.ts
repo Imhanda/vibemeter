@@ -43,6 +43,17 @@ export function getVenueDetail(placeId: string): Promise<VenueDetail> {
   return api.get<VenueDetail>(`/v1/vibe/${placeId}`);
 }
 
+export interface SearchRequest {
+  query: string;
+  lat: number;
+  lng: number;
+  radius?: number;
+}
+
+export function searchVenues(req: SearchRequest): Promise<NearbyVenue[]> {
+  return api.post<NearbyVenue[]>("/v1/places/search", req);
+}
+
 export interface VibeSummary {
   summary: string;
   tone: "lively" | "moderate" | "quiet";
@@ -50,4 +61,21 @@ export interface VibeSummary {
 
 export function getVibeSummary(placeId: string): Promise<VibeSummary> {
   return api.get<VibeSummary>(`/v1/vibe/${placeId}/summary`);
+}
+
+export interface FollowStatus {
+  following: boolean;
+  threshold?: number;
+}
+
+export function getFollowStatus(placeId: string): Promise<FollowStatus> {
+  return api.get<FollowStatus>(`/v1/user/follow/${placeId}`);
+}
+
+export function followVenue(placeId: string, threshold = 75): Promise<void> {
+  return api.post<void>(`/v1/user/follow/${placeId}`, { threshold });
+}
+
+export function unfollowVenue(placeId: string): Promise<void> {
+  return api.delete<void>(`/v1/user/follow/${placeId}`);
 }

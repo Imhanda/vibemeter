@@ -12,7 +12,7 @@ import {
 import { Audio } from "expo-av";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { submitVibe, analyseAudio, AudioSignals } from "../api/vibe";
-import { DEFAULT_LOCATION } from "../config";
+import { useLocation } from "../hooks/useLocation";
 import { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CheckIn">;
@@ -38,6 +38,7 @@ const EMOJI_OPTIONS: { label: string; value: number }[] = [
 
 export function CheckInScreen({ route, navigation }: Props) {
   const { placeId, name } = route.params;
+  const { coords } = useLocation();
   const [mode, setMode] = useState<Mode>("listen");
 
   // Listen-mode state
@@ -172,16 +173,16 @@ export function CheckInScreen({ route, navigation }: Props) {
       if (mode === "listen" && signals) {
         payload = {
           place_id: placeId,
-          client_lat: DEFAULT_LOCATION.lat,
-          client_lng: DEFAULT_LOCATION.lng,
+          client_lat: coords.lat,
+          client_lng: coords.lng,
           ...signals,
         };
       } else {
         payload = {
           place_id: placeId,
           manual_rating: selected!,
-          client_lat: DEFAULT_LOCATION.lat,
-          client_lng: DEFAULT_LOCATION.lng,
+          client_lat: coords.lat,
+          client_lng: coords.lng,
         };
       }
       const resp = await submitVibe(payload);

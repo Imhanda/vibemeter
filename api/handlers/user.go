@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"vibemeter/cache"
 	"vibemeter/db"
 	"vibemeter/middleware"
 	"vibemeter/models"
@@ -86,5 +87,57 @@ func FollowVenue(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "following"})
+	// Mirror into Redis for fast lookup during push notification dispatch
+	_ = cache.AddVenueSubscriber(c.Request.Context(), placeID, userID, body.Threshold)
+
+	c.JSON(http.StatusOK, gin.H{"status": "following", "threshold": body.Threshold})
+}
+
+// UnfollowVenue handles DELETE /v1/user/follow/:place_id
+func UnfollowVenue(c *gin.Context) {
+	userID := c.GetString(middleware.UserIDKey)
+	placeID := c.Param("place_id")
+
+	_, _ = db.DB.Exec(
+		`DELETE FROM notification_subscriptions WHERE user_id=$1 AND place_id=$2`,
+		userID, placeID)
+
+	_ = cache.RemoveVenueSubscriber(c.Request.Context(), placeID, userID)
+
+	c.JSON(http.StatusOK, gin.H{"status": "unfollowed"})
+}
+
+// GetFollowStatus handles GET /v1/user/follow/:place_id
+func GetFollowStatus(c *gin.Context) {
+	userID := c.GetString(middleware.UserIDKey)
+	placeID := c.Param("place_id")
+
+	// Check Redis first
+	following, err := cache.IsVenueSubscriber(c.Request.Context(), placeID, userID)
+	if err != nil {
+		// Fall back to DB
+		var threshold int
+		err2 := db.DB.QueryRow(
+			`SELECT threshold FROM notification_subscriptions WHERE user_id=$1 AND place_id=$2`,
+			userID, placeID).Scan(&threshold)
+		if err2 != nil {
+			c.JSON(http.StatusOK, gin.H{"following": false})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"following": true, "threshold": threshold})
+		return
+	}
+
+	if !following {
+		c.JSON(http.StatusOK, gin.H{"following": false})
+		return
+	}
+
+	// Get threshold from DB for accuracy
+	var threshold int
+	_ = db.DB.QueryRow(
+		`SELECT threshold FROM notification_subscriptions WHERE user_id=$1 AND place_id=$2`,
+		userID, placeID).Scan(&threshold)
+
+	c.JSON(http.StatusOK, gin.H{"following": true, "threshold": threshold})
 }

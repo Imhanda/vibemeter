@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getVenueDetail, getVibeSummary, VenueDetail, VibeSummary } from "../api/places";
+import { getVenueDetail, getVibeSummary, getFollowStatus, followVenue, unfollowVenue, VenueDetail, VibeSummary } from "../api/places";
 import { VenueSocket, ScoreUpdateEvent } from "../api/websocket";
 import { VibeBadge, confidenceBadge } from "../components/VibeBadge";
 import { useVibeStore } from "../store/useVibeStore";
@@ -22,6 +22,8 @@ export function VenueDetailScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<VibeSummary | null>(null);
+  const [following, setFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
   const socketRef = useRef<VenueSocket | null>(null);
   const { updateVenueScore } = useVibeStore();
 
@@ -29,9 +31,12 @@ export function VenueDetailScreen({ route, navigation }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getVenueDetail(placeId);
+      const [data, status] = await Promise.all([
+        getVenueDetail(placeId),
+        getFollowStatus(placeId).catch(() => ({ following: false })),
+      ]);
       setVenue(data);
-      // Fetch AI summary in parallel — fail silently if no check-ins yet
+      setFollowing(status.following);
       getVibeSummary(placeId).then(setSummary).catch(() => {});
     } catch (e: any) {
       setError(e.message ?? "Failed to load venue");
@@ -39,6 +44,23 @@ export function VenueDetailScreen({ route, navigation }: Props) {
       setLoading(false);
     }
   }, [placeId]);
+
+  async function toggleFollow() {
+    setFollowLoading(true);
+    try {
+      if (following) {
+        await unfollowVenue(placeId);
+        setFollowing(false);
+      } else {
+        await followVenue(placeId, 10);
+        setFollowing(true);
+      }
+    } catch (_) {
+      // fail silently
+    } finally {
+      setFollowLoading(false);
+    }
+  }
 
   // Subscribe to live score updates via WebSocket
   useEffect(() => {
@@ -98,6 +120,19 @@ export function VenueDetailScreen({ route, navigation }: Props) {
         <Text style={styles.checkInCount}>
           {venue.check_in_count} check-in{venue.check_in_count !== 1 ? "s" : ""} in the last 3 hours
         </Text>
+        <TouchableOpacity
+          style={[styles.bellBtn, following && styles.bellBtnActive]}
+          onPress={toggleFollow}
+          disabled={followLoading}
+        >
+          {followLoading
+            ? <ActivityIndicator size="small" color="#14b8a6" />
+            : <Text style={styles.bellIcon}>{following ? "🔕" : "🔔"}</Text>
+          }
+          <Text style={[styles.bellLabel, following && styles.bellLabelActive]}>
+            {following ? "Unsubscribe" : "Notify me at 10+"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* AI vibe summary */}
@@ -208,4 +243,13 @@ const styles = StyleSheet.create({
   summaryQuiet: { backgroundColor: "#0a0f14", borderWidth: 1, borderColor: "#3b82f6" },
   summaryIcon: { fontSize: 22 },
   summaryText: { flex: 1, color: "#ddd", fontSize: 13, lineHeight: 18 },
+  bellBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999,
+    borderWidth: 1, borderColor: "#333", backgroundColor: "#1a1a22", marginTop: 4,
+  },
+  bellBtnActive: { borderColor: "#ef4444", backgroundColor: "#2a0a0a" },
+  bellIcon: { fontSize: 16 },
+  bellLabel: { color: "#888", fontSize: 13 },
+  bellLabelActive: { color: "#ef4444", fontWeight: "600" },
 });

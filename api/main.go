@@ -34,10 +34,14 @@ func main() {
 
 		// Places
 		v1.GET("/places/nearby", handlers.GetNearbyPlaces)
+		v1.POST("/places/search", handlers.SearchPlaces)
 
 		// User
 		v1.GET("/user/profile", handlers.GetUserProfile)
+		v1.GET("/user/follow/:place_id", handlers.GetFollowStatus)
 		v1.POST("/user/follow/:place_id", handlers.FollowVenue)
+		v1.DELETE("/user/follow/:place_id", handlers.UnfollowVenue)
+		v1.POST("/user/push-token", handlers.RegisterPushToken)
 
 		// WebSocket
 		v1.GET("/ws", handlers.WSHandler)

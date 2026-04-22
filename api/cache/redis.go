@@ -99,6 +99,45 @@ func SetTrustScore(ctx context.Context, userID string, score float64) error {
 	return RDB.Set(ctx, key, score, 0).Err()
 }
 
+// ── Subscriber cache ─────────────────────────────────────────────────────────
+// Key: subscribers:{place_id} → Hash { user_id → threshold (int as string) }
+// No TTL — entries are removed explicitly on unfollow.
+
+func subscribersKey(placeID string) string {
+	return fmt.Sprintf("subscribers:%s", placeID)
+}
+
+// AddVenueSubscriber upserts a subscriber with their threshold into the Redis hash.
+func AddVenueSubscriber(ctx context.Context, placeID, userID string, threshold int) error {
+	return RDB.HSet(ctx, subscribersKey(placeID), userID, threshold).Err()
+}
+
+// RemoveVenueSubscriber removes a subscriber from the Redis hash.
+func RemoveVenueSubscriber(ctx context.Context, placeID, userID string) error {
+	return RDB.HDel(ctx, subscribersKey(placeID), userID).Err()
+}
+
+// GetVenueSubscribers returns a map of userID → threshold for a venue.
+func GetVenueSubscribers(ctx context.Context, placeID string) (map[string]int, error) {
+	raw, err := RDB.HGetAll(ctx, subscribersKey(placeID)).Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int, len(raw))
+	for uid, val := range raw {
+		t := 0
+		fmt.Sscanf(val, "%d", &t)
+		out[uid] = t
+	}
+	return out, nil
+}
+
+// IsVenueSubscriber checks if a user is subscribed to a venue.
+func IsVenueSubscriber(ctx context.Context, placeID, userID string) (bool, error) {
+	exists, err := RDB.HExists(ctx, subscribersKey(placeID), userID).Result()
+	return exists, err
+}
+
 func PublishScoreUpdate(ctx context.Context, placeID string, payload []byte) error {
 	channel := fmt.Sprintf("ws:room:%s", placeID)
 	return RDB.Publish(ctx, channel, payload).Err()

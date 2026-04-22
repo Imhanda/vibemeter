@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"vibemeter/db"
 	"vibemeter/middleware"
 	"vibemeter/models"
+	"vibemeter/notifications"
 	"vibemeter/scoring"
 
 	"github.com/gin-gonic/gin"
@@ -68,11 +71,13 @@ func SubmitVibe(c *gin.Context) {
 		return
 	}
 
-	// --- Geo-fence check ---
-	distM := scoring.Haversine(req.ClientLat, req.ClientLng, place.Lat, place.Lng)
-	if distM > config.C.GeoFenceRadiusM {
-		c.JSON(http.StatusForbidden, gin.H{"error": "you must be at the venue to check in"})
-		return
+	// --- Geo-fence check (skipped in dev mode) ---
+	if !config.C.SkipAuth {
+		distM := scoring.Haversine(req.ClientLat, req.ClientLng, place.Lat, place.Lng)
+		if distM > config.C.GeoFenceRadiusM {
+			c.JSON(http.StatusForbidden, gin.H{"error": "you must be at the venue to check in"})
+			return
+		}
 	}
 
 	// --- Compute raw score ---
@@ -179,6 +184,49 @@ func SubmitVibe(c *gin.Context) {
 	if err := cache.PublishScoreUpdate(ctx, req.PlaceID, wsPayload); err != nil {
 		log.Println("ws publish error:", err)
 	}
+
+	// --- Push notifications: read subscribers from Redis, fall back to DB ---
+	go func(placeID string, newScore float64) {
+		ctx2 := context.Background()
+
+		subs, err := cache.GetVenueSubscribers(ctx2, placeID)
+		if err != nil || len(subs) == 0 {
+			// Redis miss — load from DB and warm the cache
+			type row struct {
+				UserID    string `db:"user_id"`
+				Threshold int    `db:"threshold"`
+			}
+			var rows []row
+			if err2 := db.DB.Select(&rows,
+				`SELECT user_id, threshold FROM notification_subscriptions WHERE place_id = $1`,
+				placeID); err2 != nil || len(rows) == 0 {
+				return
+			}
+			subs = make(map[string]int, len(rows))
+			for _, r := range rows {
+				subs[r.UserID] = r.Threshold
+				_ = cache.AddVenueSubscriber(ctx2, placeID, r.UserID, r.Threshold)
+			}
+		}
+
+		for userID, threshold := range subs {
+			if newScore < float64(threshold) {
+				continue
+			}
+			var tokens []string
+			if err := db.DB.Select(&tokens,
+				`SELECT token FROM push_tokens WHERE user_id = $1`, userID,
+			); err != nil {
+				continue
+			}
+			msg := fmt.Sprintf("Vibe score just hit %.0f — head over now!", newScore)
+			for _, token := range tokens {
+				if err := notifications.SendPush(token, "Venue is buzzing! 🔥", msg, map[string]string{"place_id": placeID}); err != nil {
+					log.Println("push error:", err)
+				}
+			}
+		}
+	}(req.PlaceID, venueScore)
 
 	// --- Badge check: first check-in at this venue ---
 	var badgeEarned *string

@@ -38,13 +38,13 @@ func GetNearbyPlaces(c *gin.Context) {
 	radius := 500.0
 	if r := c.Query("radius"); r != "" {
 		if v, err2 := strconv.ParseFloat(r, 64); err2 == nil && v > 0 {
-			if v > 2000 {
-				v = 2000
+			if v > 50000 {
+				v = 50000
 			}
 			radius = v
 		}
 	}
-	limit := 50
+	limit := 100
 	if l := c.Query("limit"); l != "" {
 		if v, err2 := strconv.Atoi(l); err2 == nil && v > 0 {
 			if v > 200 {

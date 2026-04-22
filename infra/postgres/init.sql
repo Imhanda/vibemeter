@@ -107,6 +107,16 @@ CREATE TABLE notification_subscriptions (
 );
 
 -- =========================
+-- PUSH TOKENS
+-- =========================
+CREATE TABLE push_tokens (
+  user_id    VARCHAR(128) REFERENCES users(id) ON DELETE CASCADE,
+  token      TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (user_id, token)
+);
+
+-- =========================
 -- SEED DATA (from places_seed.csv — 61 Bengaluru nightlife venues)
 -- =========================
 
