@@ -274,6 +274,25 @@ SKIP_AUTH=false
 GEO_FENCE_RADIUS_M=50000000
 ```
 
+---
+
+### Developer: How to get these keys
+
+**`GOOGLE_PLACES_API_KEY`**
+1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
+2. Enable **Places API (New)** at `console.cloud.google.com/apis/library/places.googleapis.com`
+3. Create an **API Key**
+
+**`GOOGLE_WEB_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`**
+1. Same Credentials page → **Create Credentials → OAuth 2.0 Client ID** (Web application)
+2. Copy the Client ID and Client Secret
+
+**`FIREBASE_PROJECT_ID`**
+1. [Firebase Console](https://console.firebase.google.com) → Project Settings
+2. Copy the **Project ID**
+
+> These values also go in `infra/.env` (used by the seed script — see Part 10a below).
+
 **What each line does:**
 | Key | What it's for |
 |---|---|
@@ -327,6 +346,43 @@ All 4 services (`vibemeter-postgres`, `vibemeter-redis`, `vibemeter-yamnet`, `vi
 
 ---
 
+## Part 10a — (Re)seed Venue Data (optional)
+
+The repo ships with a pre-built `postgres/places_seed.csv` for Bengaluru. If you want to seed a different city or refresh the data:
+
+1. Install the Python dependency (one time):
+
+```
+pip3 install requests
+```
+
+2. Create `infra/.env` with the keys from Part 9:
+
+```
+GOOGLE_PLACES_API_KEY=your_key
+FIREBASE_PROJECT_ID=your_firebase_project_id
+GOOGLE_WEB_CLIENT_ID=your_google_web_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+```
+
+3. Run the seed script:
+
+```
+source infra/.env
+python3 infra/seed_places.py --city "Mumbai" --api-key "$GOOGLE_PLACES_API_KEY"
+```
+
+4. Reload the database with the new data:
+
+```
+cd infra
+docker compose down -v && docker compose up -d
+```
+
+> The `--limit` flag controls how many venues are fetched (default 100). Use `--output` to write to a custom CSV path.
+
+---
+
 ## Part 11 — Start the API Server
 
 The API server is the Go program that handles all requests from the app — logins, venue lookups, check-ins, vibe scores, and WebSocket connections.
@@ -340,12 +396,12 @@ cd ~/Desktop/vibemeter/api
 ```
 
 ```
-go run .
+./run.sh
 ```
 
 **What this command does:**
+- Loads all secrets from `infra/.env` (`FIREBASE_PROJECT_ID`, `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, etc.)
 - Compiles the Go code (first run only downloads dependencies — ~30 seconds)
-- Reads your `.env` file from Part 9
 - Connects to the PostgreSQL database and Redis cache that Docker started
 - Starts a web server on port **8080** that the iPhone app talks to
 - Also provides a WebSocket endpoint for real-time vibe score updates to all connected phones
@@ -550,7 +606,7 @@ docker compose up -d
 
 ```
 cd ~/Desktop/vibemeter/api
-go run .
+./run.sh
 ```
 
 4. **Open the app on your iPhone** — it's already installed, just tap the icon.
