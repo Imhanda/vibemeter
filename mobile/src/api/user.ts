@@ -4,6 +4,7 @@ export interface UserProfile {
   user_id: string;
   display_name: string;
   photo_url: string;
+  trust_score: number;
   check_ins: number;
   streak_days: number;
   badges: string[];

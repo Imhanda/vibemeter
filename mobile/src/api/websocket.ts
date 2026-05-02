@@ -1,4 +1,5 @@
-import { API_BASE_URL, DEV_USER_ID, SKIP_AUTH } from "../config";
+import { API_BASE_URL } from "../config";
+import { auth } from "../config/firebase";
 
 export interface ScoreUpdateEvent {
   type: "score_update";
@@ -22,10 +23,12 @@ export class VenueSocket {
     this.onMessage = onMessage;
   }
 
-  connect() {
+  async connect() {
     const base = API_BASE_URL.replace(/^http/, "ws");
-    const userParam = SKIP_AUTH ? `?userId=${DEV_USER_ID}` : "";
-    this.ws = new WebSocket(`${base}/v1/ws${userParam}`);
+    const user = auth.currentUser;
+    const token = user ? await user.getIdToken() : "";
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+    this.ws = new WebSocket(`${base}/v1/ws${tokenParam}`);
 
     this.ws.onopen = () => {
       this.ws?.send(

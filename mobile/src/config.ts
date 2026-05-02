@@ -9,8 +9,8 @@ function getApiBaseUrl(): string {
     const host = hostUri.split(":")[0]; // strip the Metro port
     return `http://${host}:8080`;
   }
-  // Fallback for production builds or CI
-  return "http://localhost:8080";
+  // Fallback for native builds — replace with your Mac's local IP
+  return "http://192.168.1.11:8080";
 }
 
 export const API_BASE_URL = getApiBaseUrl();

@@ -1,5 +1,6 @@
-import { API_BASE_URL, DEV_USER_ID, SKIP_AUTH } from "../config";
+import { API_BASE_URL } from "../config";
 import { api } from "./client";
+import { auth } from "../config/firebase";
 
 export interface SubmitVibeRequest {
   place_id: string;
@@ -39,7 +40,11 @@ export async function analyseAudio(fileUri: string): Promise<AudioSignals> {
   } as any);
 
   const headers: Record<string, string> = {};
-  if (SKIP_AUTH) headers["X-User-ID"] = DEV_USER_ID;
+  const user = auth.currentUser;
+  if (user) {
+    const token = await user.getIdToken();
+    headers["Authorization"] = `Bearer ${token}`;
+  }
 
   const res = await fetch(`${API_BASE_URL}/v1/vibe/analyse`, {
     method: "POST",

@@ -31,6 +31,35 @@ type firebaseClaims struct {
 	jwt.RegisteredClaims
 }
 
+// WSAuthMiddleware validates Firebase JWTs passed as ?token= query param for WebSocket connections.
+func WSAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if config.C.SkipAuth {
+			userID := c.Query("userId")
+			if userID == "" {
+				userID = "dev-user"
+			}
+			c.Set(UserIDKey, userID)
+			c.Next()
+			return
+		}
+
+		token := c.Query("token")
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
+			return
+		}
+
+		userID, err := verifyFirebaseToken(token)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+		c.Set(UserIDKey, userID)
+		c.Next()
+	}
+}
+
 // AuthMiddleware validates Firebase JWTs. Set SKIP_AUTH=true for local dev
 // and pass X-User-ID header instead.
 func AuthMiddleware() gin.HandlerFunc {

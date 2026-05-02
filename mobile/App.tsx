@@ -11,6 +11,10 @@ import { VenueDetailScreen } from "./src/screens/VenueDetailScreen";
 import { CheckInScreen } from "./src/screens/CheckInScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { SplashScreen } from "./src/screens/SplashScreen";
+import { LoginScreen } from "./src/screens/LoginScreen";
+import { useAuthStore } from "./src/store/useAuthStore";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./src/config/firebase";
 
 // ── Navigator param types ─────────────────────────────────────────────────────
 
@@ -104,9 +108,20 @@ function Tabs() {
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const { userId, setUser, clearUser } = useAuthStore();
 
+  // Listen for Firebase auth state changes
   useEffect(() => {
-    registerForPushNotifications();
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const token = await user.getIdToken();
+        setUser(user.uid, token, user.displayName, user.photoURL);
+        registerForPushNotifications();
+      } else {
+        clearUser();
+      }
+    });
+    return unsub;
   }, []);
 
   if (showSplash) {
@@ -114,6 +129,15 @@ export default function App() {
       <>
         <StatusBar style="light" />
         <SplashScreen onDone={() => setShowSplash(false)} />
+      </>
+    );
+  }
+
+  if (!userId) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <LoginScreen />
       </>
     );
   }

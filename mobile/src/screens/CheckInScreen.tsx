@@ -9,7 +9,7 @@ import {
   Animated,
   Easing,
 } from "react-native";
-import { Audio } from "expo-av";
+import { useAudioRecorder, AudioModule, IOSOutputFormat, AudioQuality, setAudioModeAsync } from "expo-audio";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { submitVibe, analyseAudio, AudioSignals } from "../api/vibe";
 import { useLocation } from "../hooks/useLocation";
@@ -20,13 +20,6 @@ type Mode = "listen" | "manual";
 type RecordState = "idle" | "recording" | "uploading" | "done";
 
 const RECORD_SECONDS = 10;
-
-// Live level bar: map raw dBFS to 0-1 for display only.
-// Uses running min as device-agnostic floor.
-function liveLevelNorm(db: number, floor: number): number {
-  const RANGE = 30; // dB range above floor to fill bar
-  return Math.max(0, Math.min((db - floor) / RANGE, 1));
-}
 
 const EMOJI_OPTIONS: { label: string; value: number }[] = [
   { label: "💤", value: 1 },
@@ -41,33 +34,42 @@ export function CheckInScreen({ route, navigation }: Props) {
   const { coords } = useLocation();
   const [mode, setMode] = useState<Mode>("listen");
 
-  // Listen-mode state
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [countdown, setCountdown] = useState(RECORD_SECONDS);
-  const [levelNorm, setLevelNorm] = useState(0);
   const [signals, setSignals] = useState<AudioSignals | null>(null);
   const [analyseError, setAnalyseError] = useState<string | null>(null);
-
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const uriRef = useRef<string | null>(null);
-  const levelFloorRef = useRef<number>(0);
-  const sampleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Manual-mode state
   const [selected, setSelected] = useState<number | null>(null);
-
-  // Submit state
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ score: number; badge: string | null } | null>(null);
 
-  // Pulse animation
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const uriRef = useRef<string | null>(null);
+  const audioRecorder = useAudioRecorder({
+    extension: ".m4a",
+    sampleRate: 44100,
+    numberOfChannels: 2,
+    bitRate: 128000,
+    android: { outputFormat: "mpeg4", audioEncoder: "aac" },
+    ios: {
+      outputFormat: IOSOutputFormat.MPEG4AAC,
+      audioQuality: AudioQuality.MAX,
+      linearPCMBitDepth: 16,
+      linearPCMIsBigEndian: false,
+      linearPCMIsFloat: false,
+    },
+    web: { mimeType: "audio/webm", bitsPerSecond: 128000 },
+  });
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    return () => { stopRecording(true); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      try {
+        if (audioRecorder.isRecording) audioRecorder.stop();
+      } catch (_) {}
+    };
   }, []);
 
   function startPulse() {
@@ -87,43 +89,23 @@ export function CheckInScreen({ route, navigation }: Props) {
 
   async function startRecording() {
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
-      if (!granted) {
+      const status = await AudioModule.requestRecordingPermissionsAsync();
+      if (!status.granted) {
         Alert.alert("Permission denied", "Microphone access is needed to score the vibe.");
         return;
       }
 
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
-      const rec = new Audio.Recording();
-      await rec.prepareToRecordAsync({
-        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        isMeteringEnabled: true,
-      });
-      await rec.startAsync();
-      recordingRef.current = rec;
-      levelFloorRef.current = 0;
-      uriRef.current = null;
       setSignals(null);
       setAnalyseError(null);
       setRecordState("recording");
       setCountdown(RECORD_SECONDS);
       startPulse();
 
-      // Poll metering for live level bar
-      sampleTimerRef.current = setInterval(async () => {
-        const status = await rec.getStatusAsync();
-        if (status.isRecording && status.metering !== undefined) {
-          const db = status.metering;
-          // Track running floor (min seen so far) as device-specific baseline
-          if (levelFloorRef.current === 0 || db < levelFloorRef.current) {
-            levelFloorRef.current = db;
-          }
-          setLevelNorm(liveLevelNorm(db, levelFloorRef.current));
-        }
-      }, 200);
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
 
-      // Countdown then auto-stop
       let remaining = RECORD_SECONDS;
       countdownTimerRef.current = setInterval(() => {
         remaining -= 1;
@@ -131,30 +113,25 @@ export function CheckInScreen({ route, navigation }: Props) {
         if (remaining <= 0) stopRecording(false);
       }, 1000);
     } catch (e: any) {
+      setRecordState("idle");
       Alert.alert("Recording error", e.message ?? "Could not start recording");
     }
   }
 
   async function stopRecording(silent: boolean) {
-    if (sampleTimerRef.current) { clearInterval(sampleTimerRef.current); sampleTimerRef.current = null; }
     if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
     stopPulse();
-    setLevelNorm(0);
 
-    const rec = recordingRef.current;
-    if (!rec) return;
-    recordingRef.current = null;
-
-    try { await rec.stopAndUnloadAsync(); } catch (_) { /* already stopped */ }
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+    try { uriRef.current = audioRecorder.uri ?? null; } catch (_) {}
+    try {
+      await audioRecorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+    } catch (_) {}
 
     if (silent) { setRecordState("idle"); return; }
-
-    const uri = rec.getURI();
+    const uri = uriRef.current;
     if (!uri) { setRecordState("idle"); return; }
-    uriRef.current = uri;
 
-    // Upload to backend YAMNet sidecar
     setRecordState("uploading");
     try {
       const derived = await analyseAudio(uri);
@@ -201,7 +178,6 @@ export function CheckInScreen({ route, navigation }: Props) {
     }
   }
 
-  // ── Result screen ─────────────────────────────────────────────────────────
   if (result) {
     return (
       <View style={styles.container}>
@@ -226,7 +202,6 @@ export function CheckInScreen({ route, navigation }: Props) {
     <View style={styles.container}>
       <Text style={styles.venueName}>{name}</Text>
 
-      {/* Mode tabs */}
       <View style={styles.tabRow}>
         <TouchableOpacity style={[styles.tab, mode === "listen" && styles.tabActive]} onPress={() => setMode("listen")}>
           <Text style={[styles.tabText, mode === "listen" && styles.tabTextActive]}>🎤 Listen</Text>
@@ -236,7 +211,6 @@ export function CheckInScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Listen mode ── */}
       {mode === "listen" && (
         <View style={styles.listenArea}>
           {recordState === "idle" && (
@@ -257,9 +231,6 @@ export function CheckInScreen({ route, navigation }: Props) {
               <Animated.View style={[styles.micBtn, styles.micBtnRecording, { transform: [{ scale: pulseAnim }] }]}>
                 <Text style={styles.micIcon}>🎙️</Text>
               </Animated.View>
-              <View style={styles.levelBarBg}>
-                <View style={[styles.levelBarFill, { width: `${Math.round(levelNorm * 100)}%` as any }]} />
-              </View>
               <Text style={styles.listeningLabel}>Listening…</Text>
               <TouchableOpacity onPress={() => stopRecording(false)}>
                 <Text style={styles.cancelText}>Stop early</Text>
@@ -302,7 +273,6 @@ export function CheckInScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* ── Manual mode ── */}
       {mode === "manual" && (
         <View style={styles.listenArea}>
           <Text style={styles.instruction}>How's the vibe right now?</Text>
@@ -381,8 +351,6 @@ const styles = StyleSheet.create({
   micBtnRecording: { borderColor: "#ef4444", backgroundColor: "#2a0a0a" },
   micIcon: { fontSize: 40 },
   countdown: { color: "#14b8a6", fontSize: 36, fontWeight: "800" },
-  levelBarBg: { width: "80%", height: 8, backgroundColor: "#1a1a22", borderRadius: 4, overflow: "hidden" },
-  levelBarFill: { height: "100%", backgroundColor: "#14b8a6", borderRadius: 4 },
   listeningLabel: { color: "#aaa", fontSize: 13 },
   cancelText: { color: "#ef4444", fontSize: 13 },
   signalBreakdown: { width: "100%", paddingHorizontal: 8 },

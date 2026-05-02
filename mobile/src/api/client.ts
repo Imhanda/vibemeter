@@ -1,4 +1,5 @@
-import { API_BASE_URL, DEV_USER_ID, SKIP_AUTH } from "../config";
+import { API_BASE_URL } from "../config";
+import { auth } from "../config/firebase";
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -10,12 +11,11 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     "Content-Type": "application/json",
   };
 
-  if (SKIP_AUTH) {
-    headers["X-User-ID"] = DEV_USER_ID;
+  const user = auth.currentUser;
+  if (user) {
+    const token = await user.getIdToken();
+    headers["Authorization"] = `Bearer ${token}`;
   }
-  // TODO: replace with real Firebase JWT when auth is wired up
-  // const token = await getFirebaseToken();
-  // headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: opts.method ?? "GET",
@@ -39,3 +39,17 @@ export const api = {
     request<T>(path, { method: "POST", body }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
+
+// Unauthenticated request for auth endpoints
+export async function publicPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? "Request failed");
+  }
+  return res.json() as Promise<T>;
+}

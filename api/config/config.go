@@ -10,6 +10,8 @@ type Config struct {
 	RedisURL           string
 	FirebaseProjectID  string
 	GooglePlacesAPIKey string
+	GoogleWebClientID  string
+	GoogleClientSecret string
 	YAMNetURL          string
 	AnthropicAPIKey    string
 	GeoFenceRadiusM    float64
@@ -27,6 +29,8 @@ func Load() {
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
 		FirebaseProjectID:  getEnv("FIREBASE_PROJECT_ID", ""),
 		GooglePlacesAPIKey: getEnv("GOOGLE_PLACES_API_KEY", ""),
+		GoogleWebClientID:  getEnv("GOOGLE_WEB_CLIENT_ID", ""),
+		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		YAMNetURL:          getEnv("YAMNET_URL", "http://localhost:8082"),
 		AnthropicAPIKey:    getEnv("ANTHROPIC_API_KEY", ""),
 		GeoFenceRadiusM:    getEnvFloat("GEO_FENCE_RADIUS_M", 300),

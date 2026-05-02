@@ -2,6 +2,7 @@
   "expo": {
     "name": "VibeMeter",
     "slug": "vibemeter",
+    "scheme": "vibemeter",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,6 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.vibemeter.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "VibeMeter records 10 seconds of ambient audio and transmits it to a processing server to classify music, crowd, and ambient sound levels. The audio is analysed in memory and discarded immediately — it is never stored."
       }
@@ -29,7 +31,15 @@
     },
     "newArchEnabled": true,
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.368682546170-26n1ubcieuamj7508msrh7082qkdigre"
+        }
+      ],
+      "expo-audio"
     ]
   }
 }

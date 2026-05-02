@@ -28,7 +28,7 @@ type wsInMessage struct {
 // WSHandler handles WebSocket connections at GET /ws.
 // Clients send {"type":"subscribe","place_id":"..."} to receive score_update events.
 func WSHandler(c *gin.Context) {
-	_ = c.GetString(middleware.UserIDKey) // authenticated user
+	_ = c.GetString(middleware.UserIDKey)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {

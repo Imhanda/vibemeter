@@ -23,14 +23,17 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	// Auth (public)
+	r.POST("/v1/auth/google", handlers.ExchangeGoogleCode)
+
 	// Authenticated routes
 	v1 := r.Group("/v1", middleware.AuthMiddleware())
 	{
-		// Vibe
+		// Vibe — /vibe/analyse must be before /vibe/:place_id
 		v1.POST("/vibe", handlers.SubmitVibe)
+		v1.POST("/vibe/analyse", handlers.AnalyseAudio)
 		v1.GET("/vibe/:place_id", handlers.GetVenueVibe)
 		v1.GET("/vibe/:place_id/summary", handlers.GetVibeSummary)
-		v1.POST("/vibe/analyse", handlers.AnalyseAudio)
 
 		// Places
 		v1.GET("/places/nearby", handlers.GetNearbyPlaces)
@@ -42,10 +45,10 @@ func main() {
 		v1.POST("/user/follow/:place_id", handlers.FollowVenue)
 		v1.DELETE("/user/follow/:place_id", handlers.UnfollowVenue)
 		v1.POST("/user/push-token", handlers.RegisterPushToken)
-
-		// WebSocket
-		v1.GET("/ws", handlers.WSHandler)
 	}
+
+	// WebSocket — auth handled inside handler via query param token
+	r.GET("/v1/ws", middleware.WSAuthMiddleware(), handlers.WSHandler)
 
 	// Admin — one-time or manual pull from Google Places API
 	admin := r.Group("/v1/admin", middleware.AuthMiddleware())

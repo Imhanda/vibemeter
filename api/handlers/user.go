@@ -42,6 +42,7 @@ func GetUserProfile(c *gin.Context) {
 		"user_id":      user.ID,
 		"display_name": user.DisplayName,
 		"photo_url":    user.PhotoURL,
+		"trust_score":  user.TrustScore,
 		"check_ins":    user.CheckInCount,
 		"streak_days":  user.StreakDays,
 		"badges":       badgeTypes,
