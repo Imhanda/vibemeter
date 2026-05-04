@@ -36,6 +36,7 @@ ml/*.egg-info/
 
 # Docker
 infra/pgadmin/sessions/
+infra/postgres/places_seed.csv
 
 # IDE & OS
 .vscode/settings.json

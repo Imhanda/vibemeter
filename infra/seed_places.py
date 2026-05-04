@@ -29,8 +29,7 @@ Get a key at: https://console.cloud.google.com/apis/credentials
 
 import argparse
 import csv
-import json
-import os
+import math
 import sys
 import time
 from pathlib import Path
@@ -47,7 +46,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 # Place types we care about — these map to Google Places API types
-VENUE_TYPES = ["bar", "pub", "night_club", "restaurant"]
+VENUE_TYPES = ["bar", "pub", "night_club", "wine_bar", "cocktail_bar", "sports_bar"]
 
 # Google Places API (New) endpoints
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -65,9 +64,10 @@ FIELD_MASK = ",".join([
     "places.userRatingCount",
 ])
 
-# Radius in metres for each search pass. We do multiple passes across the city
-# centre to get broader coverage. Tweak if you want tighter or wider results.
-SEARCH_RADIUS_M = 3000
+# Radius in metres for each individual API call.
+# 8 km gives good density without burning too many quota units.
+# Max allowed by the API is 50,000 m.
+SEARCH_RADIUS_M = 8000
 
 # How many results to request per API call (max 20 for Nearby Search)
 PAGE_SIZE = 20
@@ -158,12 +158,16 @@ def parse_place(place: dict, api_key: str) -> dict | None:
     if not place_id or not name or lat is None or lng is None:
         return None  # skip incomplete records
 
-    # Normalise type to the values already used in the DB
+    # Normalise to the venue type values stored in the DB
     type_map = {
-        "bar": "bar",
-        "pub": "bar",
-        "night_club": "club",
-        "restaurant": "restaurant",
+        "bar":              "bar",
+        "pub":              "bar",
+        "cocktail_bar":     "bar",
+        "wine_bar":         "bar",
+        "sports_bar":       "bar",
+        "night_club":       "club",
+        "karaoke":          "club",
+        "live_music_venue": "club",
     }
     venue_type = type_map.get(primary_type, "bar")
 
@@ -181,22 +185,44 @@ def parse_place(place: dict, api_key: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Search grid — offset coordinates to cover more of the city
+# Search grid — cover a radius of `coverage_km` km from the city centre
 # ---------------------------------------------------------------------------
 
-def build_search_grid(centre_lat: float, centre_lng: float) -> list[tuple[float, float]]:
+def build_search_grid(
+    centre_lat: float,
+    centre_lng: float,
+    coverage_km: float = 20.0,
+) -> list[tuple[float, float]]:
     """
-    Return a small grid of (lat, lng) points around the city centre.
-    Each point becomes a separate API call with SEARCH_RADIUS_M coverage.
-    Offsets are roughly 2 km apart so circles overlap slightly.
+    Return a grid of (lat, lng) points that together cover a circle of
+    `coverage_km` km radius around the city centre.
+
+    Grid spacing = SEARCH_RADIUS_M × 1.5 so adjacent circles overlap ~33%,
+    avoiding gaps between search areas.
+
+    1 degree latitude  ≈ 111 km everywhere.
+    1 degree longitude ≈ 111 km × cos(lat) — corrected so the grid stays
+    square on the ground.
     """
-    delta = 0.018  # ~2 km in degrees
-    offsets = [
-        (0, 0),
-        (delta, 0), (-delta, 0), (0, delta), (0, -delta),
-        (delta, delta), (delta, -delta), (-delta, delta), (-delta, -delta),
-    ]
-    return [(centre_lat + dlat, centre_lng + dlng) for dlat, dlng in offsets]
+    spacing_m = SEARCH_RADIUS_M * 1.5
+    spacing_lat = spacing_m / 111_000
+    spacing_lng = spacing_m / (111_000 * math.cos(math.radians(centre_lat)))
+
+    steps = math.ceil((coverage_km * 1000) / spacing_m)
+
+    points: list[tuple[float, float]] = []
+    for di in range(-steps, steps + 1):
+        for dj in range(-steps, steps + 1):
+            # Only keep points whose centre is within coverage_km of city centre
+            # (trims the square grid into a circle, reducing unnecessary calls)
+            dist_km = math.sqrt((di * spacing_m) ** 2 + (dj * spacing_m) ** 2) / 1000
+            if dist_km <= coverage_km:
+                points.append((
+                    centre_lat + di * spacing_lat,
+                    centre_lng + dj * spacing_lng,
+                ))
+
+    return points
 
 
 # ---------------------------------------------------------------------------
@@ -215,13 +241,19 @@ def main():
     parser.add_argument(
         "--api-key",
         required=True,
-        help="Google Places API key (needs Places API New enabled)",
+        help="Google Places API key (needs Places API New + Geocoding API enabled)",
     )
     parser.add_argument(
         "--limit",
         type=int,
-        default=200,
-        help="Maximum number of venues to write (default: 200)",
+        default=500,
+        help="Maximum number of venues to write (default: 500)",
+    )
+    parser.add_argument(
+        "--radius",
+        type=float,
+        default=20.0,
+        help="Coverage radius in km from city centre (default: 20)",
     )
     parser.add_argument(
         "--output",
@@ -231,9 +263,11 @@ def main():
     args = parser.parse_args()
 
     print(f"\nVibeMeter Seed Generator")
-    print(f"  City   : {args.city}")
-    print(f"  Limit  : {args.limit}")
-    print(f"  Output : {args.output}")
+    print(f"  City     : {args.city}")
+    print(f"  Radius   : {args.radius} km")
+    print(f"  Limit    : {args.limit}")
+    print(f"  Output   : {args.output}")
+    print(f"  Types    : {', '.join(VENUE_TYPES)}")
     print()
 
     # Step 1 — geocode the city
@@ -242,10 +276,10 @@ def main():
     print(f"      Centre: {centre_lat:.4f}, {centre_lng:.4f}")
 
     # Step 2 — build search grid
-    print(f"[2/4] Building search grid ({len(build_search_grid(0,0))} points × {len(VENUE_TYPES)} types)...")
-    grid = build_search_grid(centre_lat, centre_lng)
+    grid = build_search_grid(centre_lat, centre_lng, coverage_km=args.radius)
     total_calls = len(grid) * len(VENUE_TYPES)
-    print(f"      Up to {total_calls} API calls — this may take ~{total_calls * REQUEST_DELAY:.0f}s")
+    print(f"[2/4] Search grid: {len(grid)} points × {len(VENUE_TYPES)} types = "
+          f"{total_calls} API calls (~{total_calls * REQUEST_DELAY:.0f}s)")
 
     # Step 3 — fetch places
     print(f"[3/4] Fetching places...")
@@ -274,8 +308,8 @@ def main():
                     rows.append(row)
                     new_this_call += 1
 
-            print(f"      Call {call_count}/{total_calls} — type={ptype:12s} "
-                  f"lat={lat:.3f} lng={lng:.3f} → +{new_this_call} new "
+            print(f"      [{call_count:3d}/{total_calls}] type={ptype:16s} "
+                  f"lat={lat:.3f} lng={lng:.3f} → +{new_this_call} "
                   f"(total: {len(rows)})")
             time.sleep(REQUEST_DELAY)
 
@@ -284,7 +318,7 @@ def main():
 
     print(f"\n      Collected {len(rows)} unique venues")
 
-    # Step 4 — sort by rating desc (most popular first) and write CSV
+    # Step 4 — write CSV
     print(f"[4/4] Writing CSV to {args.output}...")
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 

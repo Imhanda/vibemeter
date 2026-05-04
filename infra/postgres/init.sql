@@ -53,6 +53,7 @@ CREATE TABLE vibe_contributions (
   is_manual      BOOLEAN DEFAULT FALSE,
   trust_weight   FLOAT DEFAULT 1.0,
   flagged        BOOLEAN DEFAULT FALSE,
+  tags           TEXT[] DEFAULT '{}',
 
   created_at     TIMESTAMPTZ DEFAULT NOW(),
 

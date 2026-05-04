@@ -16,6 +16,7 @@ import (
 	"vibemeter/scoring"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 )
 
 type submitVibeResponse struct {
@@ -31,6 +32,7 @@ type venueDetailResponse struct {
 	VibeScore       *float64                  `json:"vibe_score"`
 	Confidence      *float64                  `json:"confidence"`
 	CheckInCount    int                       `json:"check_in_count"`
+	ActiveTags      []string                  `json:"active_tags"`
 	SignalBreakdown *models.SignalBreakdown    `json:"signal_breakdown,omitempty"`
 	History         []models.VibeHistoryEntry `json:"history"`
 }
@@ -71,8 +73,8 @@ func SubmitVibe(c *gin.Context) {
 		return
 	}
 
-	// --- Geo-fence check (skipped in dev mode) ---
-	if !config.C.SkipAuth {
+	// --- Geo-fence check (skipped when SKIP_GEO_FENCE=true) ---
+	if !config.C.SkipAuth && !config.C.SkipGeoFence {
 		distM := scoring.Haversine(req.ClientLat, req.ClientLng, place.Lat, place.Lng)
 		if distM > config.C.GeoFenceRadiusM {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you must be at the venue to check in"})
@@ -123,16 +125,21 @@ func SubmitVibe(c *gin.Context) {
 		ambient = *req.AmbientDB
 	}
 
+	tags := req.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+
 	// --- Insert contribution ---
 	var contribID string
 	err = db.DB.QueryRowx(`
 		INSERT INTO vibe_contributions
 		    (place_id, user_id, crowd_energy, music_energy, ambient_db,
-		     raw_score, is_manual, trust_weight, flagged)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		     raw_score, is_manual, trust_weight, flagged, tags)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		RETURNING id`,
 		req.PlaceID, userID, crowd, music, ambient,
-		rawScore, isManual, trustWeight, isOutlier,
+		rawScore, isManual, trustWeight, isOutlier, pq.Array(tags),
 	).Scan(&contribID)
 	if err != nil {
 		log.Println("insert contribution error:", err)
@@ -271,10 +278,26 @@ func GetVenueVibe(c *gin.Context) {
 	// Current score from Redis
 	vs, _ := cache.GetVenueScore(ctx, placeID)
 
+	// Active tags — distinct tags from recent unflagged contributions
+	var activeTags pq.StringArray
+	_ = db.DB.QueryRow(`
+		SELECT array_agg(DISTINCT t)
+		FROM vibe_contributions vc, unnest(vc.tags) AS t
+		WHERE vc.place_id = $1
+		  AND vc.created_at > NOW() - INTERVAL '3 hours'
+		  AND NOT vc.flagged
+		  AND cardinality(vc.tags) > 0`,
+		placeID,
+	).Scan(&activeTags)
+	if activeTags == nil {
+		activeTags = pq.StringArray{}
+	}
+
 	resp := venueDetailResponse{
-		PlaceID: place.ID,
-		Name:    place.Name,
-		History: []models.VibeHistoryEntry{},
+		PlaceID:    place.ID,
+		Name:       place.Name,
+		ActiveTags: []string(activeTags),
+		History:    []models.VibeHistoryEntry{},
 	}
 
 	if vs != nil {

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -29,6 +30,15 @@ const EMOJI_OPTIONS: { label: string; value: number }[] = [
   { label: "🔥", value: 5 },
 ];
 
+const VIBE_TAGS: { id: string; label: string }[] = [
+  { id: "dj",          label: "🎧 DJ" },
+  { id: "live_band",   label: "🎸 Live Band" },
+  { id: "karaoke",     label: "🎤 Karaoke" },
+  { id: "dance_floor", label: "💃 Dance Floor" },
+  { id: "open_bar",    label: "🍹 Open Bar" },
+  { id: "sports",      label: "⚽ Sports" },
+];
+
 export function CheckInScreen({ route, navigation }: Props) {
   const { placeId, name } = route.params;
   const { coords } = useLocation();
@@ -39,6 +49,7 @@ export function CheckInScreen({ route, navigation }: Props) {
   const [signals, setSignals] = useState<AudioSignals | null>(null);
   const [analyseError, setAnalyseError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ score: number; badge: string | null } | null>(null);
 
@@ -152,6 +163,7 @@ export function CheckInScreen({ route, navigation }: Props) {
           place_id: placeId,
           client_lat: coords.lat,
           client_lng: coords.lng,
+          tags: selectedTags,
           ...signals,
         };
       } else {
@@ -160,6 +172,7 @@ export function CheckInScreen({ route, navigation }: Props) {
           manual_rating: selected!,
           client_lat: coords.lat,
           client_lng: coords.lng,
+          tags: selectedTags,
         };
       }
       const resp = await submitVibe(payload);
@@ -290,6 +303,31 @@ export function CheckInScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* Tag picker */}
+      <View style={styles.tagSection}>
+        <Text style={styles.tagLabel}>What's happening right now?</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagRow}>
+          {VIBE_TAGS.map((tag) => {
+            const active = selectedTags.includes(tag.id);
+            return (
+              <TouchableOpacity
+                key={tag.id}
+                style={[styles.tagChip, active && styles.tagChipActive]}
+                onPress={() =>
+                  setSelectedTags((prev) =>
+                    active ? prev.filter((t) => t !== tag.id) : [...prev, tag.id]
+                  )
+                }
+              >
+                <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
+                  {tag.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       <TouchableOpacity
         style={[
           styles.submitBtn,
@@ -377,4 +415,14 @@ const styles = StyleSheet.create({
   scorePreviewLabel: { color: "#aaa", fontSize: 12, marginBottom: 4 },
   scorePreviewValue: { color: "#14b8a6", fontSize: 52, fontWeight: "800", lineHeight: 56 },
   scorePreviewSub: { color: "#555", fontSize: 11, marginTop: 2, textAlign: "center" },
+  tagSection: { width: "100%", marginBottom: 20 },
+  tagLabel: { color: "#aaa", fontSize: 12, marginBottom: 8, textAlign: "center" },
+  tagRow: { flexDirection: "row", gap: 8, paddingHorizontal: 4 },
+  tagChip: {
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: "#1a1a22", borderWidth: 1, borderColor: "#333",
+  },
+  tagChipActive: { backgroundColor: "#0d2926", borderColor: "#14b8a6" },
+  tagChipText: { color: "#777", fontSize: 13 },
+  tagChipTextActive: { color: "#14b8a6", fontWeight: "600" },
 });

@@ -18,6 +18,7 @@ type Config struct {
 	ScoreWindowMinutes int
 	RateLimitMax       int
 	SkipAuth           bool
+	SkipGeoFence       bool
 	Port               string
 }
 
@@ -37,6 +38,7 @@ func Load() {
 		ScoreWindowMinutes: getEnvInt("SCORE_WINDOW_MINUTES", 180),
 		RateLimitMax:       getEnvInt("RATE_LIMIT_MAX", 2),
 		SkipAuth:           getEnv("SKIP_AUTH", "false") == "true",
+		SkipGeoFence:       getEnv("SKIP_GEO_FENCE", "false") == "true",
 		Port:               getEnv("PORT", "8080"),
 	}
 }

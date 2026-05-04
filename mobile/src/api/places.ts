@@ -10,6 +10,7 @@ export interface NearbyVenue {
   check_in_count: number;
   last_updated: string | null;
   photo_url: string;
+  active_tags: string[];
 }
 
 export interface VenueDetail {
@@ -18,6 +19,7 @@ export interface VenueDetail {
   vibe_score: number | null;
   confidence: number | null;
   check_in_count: number;
+  active_tags: string[];
   signal_breakdown: {
     crowd_energy: number;
     music_energy: number;
@@ -31,11 +33,13 @@ export function getNearbyVenues(
   lng: number,
   radius = 1000,
   type?: string,
-  minScore?: number
+  minScore?: number,
+  tags?: string[],
 ): Promise<NearbyVenue[]> {
   let path = `/v1/places/nearby?lat=${lat}&lng=${lng}&radius=${radius}`;
   if (type) path += `&type=${type}`;
   if (minScore != null) path += `&min_score=${minScore}`;
+  if (tags && tags.length > 0) path += `&tags=${tags.join(",")}`;
   return api.get<NearbyVenue[]>(path);
 }
 

@@ -10,6 +10,7 @@ export interface SubmitVibeRequest {
   manual_rating?: number;
   client_lat: number;
   client_lng: number;
+  tags?: string[];
 }
 
 export interface SubmitVibeResponse {

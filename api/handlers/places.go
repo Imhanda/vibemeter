@@ -3,11 +3,13 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"vibemeter/cache"
 	"vibemeter/db"
 	"vibemeter/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 )
 
 type nearbyPlaceResponse struct {
@@ -20,6 +22,7 @@ type nearbyPlaceResponse struct {
 	CheckInCount int      `json:"check_in_count"`
 	LastUpdated  string   `json:"last_updated,omitempty"`
 	PhotoURL     string   `json:"photo_url,omitempty"`
+	ActiveTags   []string `json:"active_tags"`
 }
 
 // GetNearbyPlaces handles GET /v1/places/nearby
@@ -61,58 +64,72 @@ func GetNearbyPlaces(c *gin.Context) {
 		}
 	}
 
+	// Parse comma-separated tags filter: ?tags=dj,live_band
+	var tagFilter pq.StringArray
+	if raw := c.Query("tags"); raw != "" {
+		for _, t := range strings.Split(raw, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				tagFilter = append(tagFilter, t)
+			}
+		}
+	}
+	if tagFilter == nil {
+		tagFilter = pq.StringArray{}
+	}
+
+	const q = `
+		SELECT p.id, p.name, COALESCE(p.type,'') AS type, p.lat, p.lng,
+		       COALESCE(p.photo_url,'') AS photo_url,
+		       ST_Distance(
+		           p.location::geography,
+		           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
+		       ) AS distance_m,
+		       COALESCE(
+		         ARRAY(
+		           SELECT DISTINCT t
+		           FROM vibe_contributions vc2, unnest(vc2.tags) AS t
+		           WHERE vc2.place_id = p.id
+		             AND vc2.created_at > NOW() - INTERVAL '3 hours'
+		             AND NOT vc2.flagged
+		         ),
+		         '{}'::text[]
+		       ) AS active_tags
+		FROM places p
+		WHERE ST_DWithin(
+		          p.location::geography,
+		          ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
+		          $3
+		      )
+		  AND ($4 = '' OR p.type = $4)
+		  AND (cardinality($5::text[]) = 0 OR EXISTS (
+		        SELECT 1 FROM vibe_contributions vc
+		        WHERE vc.place_id = p.id
+		          AND vc.tags && $5::text[]
+		          AND vc.created_at > NOW() - INTERVAL '3 hours'
+		          AND NOT vc.flagged
+		      ))
+		ORDER BY distance_m
+		LIMIT $6`
+
 	var rows []models.NearbyResult
-	if venueType != "" {
-		const q = `
-			SELECT id, name, COALESCE(type,'') AS type, lat, lng,
-			       COALESCE(photo_url,'') AS photo_url,
-			       ST_Distance(
-			           location::geography,
-			           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
-			       ) AS distance_m
-			FROM places
-			WHERE ST_DWithin(
-			          location::geography,
-			          ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
-			          $3
-			      )
-			  AND type = $4
-			ORDER BY distance_m
-			LIMIT $5`
-		if err := db.DB.Select(&rows, q, lat, lng, radius, venueType, limit); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
-			return
-		}
-	} else {
-		const q = `
-			SELECT id, name, COALESCE(type,'') AS type, lat, lng,
-			       COALESCE(photo_url,'') AS photo_url,
-			       ST_Distance(
-			           location::geography,
-			           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
-			       ) AS distance_m
-			FROM places
-			WHERE ST_DWithin(
-			          location::geography,
-			          ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
-			          $3
-			      )
-			ORDER BY distance_m
-			LIMIT $4`
-		if err := db.DB.Select(&rows, q, lat, lng, radius, limit); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
-			return
-		}
+	if err := db.DB.Select(&rows, q, lat, lng, radius, venueType, tagFilter, limit); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
+		return
 	}
 
 	result := make([]nearbyPlaceResponse, 0, len(rows))
 	for _, row := range rows {
+		activeTags := []string(row.ActiveTags)
+		if activeTags == nil {
+			activeTags = []string{}
+		}
 		resp := nearbyPlaceResponse{
-			PlaceID:   row.ID,
-			Name:      row.Name,
-			Type:      row.Type,
-			DistanceM: row.DistanceM,
-			PhotoURL:  row.PhotoURL,
+			PlaceID:    row.ID,
+			Name:       row.Name,
+			Type:       row.Type,
+			DistanceM:  row.DistanceM,
+			PhotoURL:   row.PhotoURL,
+			ActiveTags: activeTags,
 		}
 
 		if vs, err := cache.GetVenueScore(c.Request.Context(), row.ID); err == nil && vs != nil {

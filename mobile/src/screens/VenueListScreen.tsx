@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,12 +21,21 @@ import { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "VenueList">;
 
-const TYPE_FILTERS = ["all", "bar", "pub", "club", "restaurant"] as const;
+const TYPE_FILTERS = ["all", "bar", "club"] as const;
 type TypeFilter = (typeof TYPE_FILTERS)[number];
+
+const VIBE_TAGS: { id: string; label: string }[] = [
+  { id: "dj",          label: "🎧 DJ" },
+  { id: "live_band",   label: "🎸 Live Band" },
+  { id: "karaoke",     label: "🎤 Karaoke" },
+  { id: "dance_floor", label: "💃 Dance Floor" },
+  { id: "open_bar",    label: "🍹 Open Bar" },
+  { id: "sports",      label: "⚽ Sports" },
+];
 
 const DEFAULT_RADIUS = 1500;
 const MIN_RADIUS = 100;
-const MAX_RADIUS = 10000;
+const MAX_RADIUS = 30000;
 
 function formatRadius(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
@@ -38,6 +48,7 @@ export function VenueListScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<TypeFilter>("all");
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [radius, setRadius] = useState(DEFAULT_RADIUS);
@@ -50,7 +61,7 @@ export function VenueListScreen({ navigation }: Props) {
       try {
         const type = filter === "all" ? undefined : filter;
         const r = overrideRadius ?? radius;
-        const data = await getNearbyVenues(DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng, r, type);
+        const data = await getNearbyVenues(DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng, r, type, undefined, tagFilter);
         setVenues(data);
       } catch (e: any) {
         setError(e.message ?? "Failed to load venues");
@@ -58,7 +69,7 @@ export function VenueListScreen({ navigation }: Props) {
         isRefresh ? setRefreshing(false) : setLoading(false);
       }
     },
-    [filter, radius, setVenues]
+    [filter, tagFilter, radius, setVenues]
   );
 
   const handleSearch = async (query: string) => {
@@ -74,6 +85,12 @@ export function VenueListScreen({ navigation }: Props) {
       setIsSearching(false);
     }
   };
+
+  function toggleTag(id: string) {
+    setTagFilter((prev) =>
+      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
+    );
+  }
 
   useEffect(() => {
     if (!locationLoading) load();
@@ -131,11 +148,11 @@ export function VenueListScreen({ navigation }: Props) {
         />
         <View style={styles.sliderRange}>
           <Text style={styles.sliderRangeText}>100 m</Text>
-          <Text style={styles.sliderRangeText}>10 km</Text>
+          <Text style={styles.sliderRangeText}>30 km</Text>
         </View>
       </View>
 
-      {/* Filter chips */}
+      {/* Type filter chips */}
       <View style={styles.filterRow}>
         {TYPE_FILTERS.map((t) => (
           <TouchableOpacity
@@ -149,6 +166,29 @@ export function VenueListScreen({ navigation }: Props) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Vibe tag filters */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tagScroll}
+        contentContainerStyle={styles.tagRow}
+      >
+        {VIBE_TAGS.map((tag) => {
+          const active = tagFilter.includes(tag.id);
+          return (
+            <TouchableOpacity
+              key={tag.id}
+              style={[styles.tagChip, active && styles.tagChipActive]}
+              onPress={() => toggleTag(tag.id)}
+            >
+              <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
+                {tag.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
       {loading && (
         <View style={styles.center}>
@@ -231,4 +271,13 @@ const styles = StyleSheet.create({
   retryBtn: { backgroundColor: "#1a1a22", borderRadius: 8, paddingHorizontal: 20, paddingVertical: 8 },
   retryText: { color: "#14b8a6", fontWeight: "600" },
   emptyText: { color: "#555", fontSize: 14 },
+  tagScroll: { height: 44 },
+  tagRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16 },
+  tagChip: {
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5,
+    backgroundColor: "#1a1a22", borderWidth: 1, borderColor: "#333",
+  },
+  tagChipActive: { backgroundColor: "#0d2926", borderColor: "#14b8a6" },
+  tagChipText: { color: "#777", fontSize: 12 },
+  tagChipTextActive: { color: "#14b8a6", fontWeight: "600" },
 });

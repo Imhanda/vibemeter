@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/lib/pq"
+)
 
 type Place struct {
 	ID             string     `db:"id"               json:"place_id"`
@@ -15,11 +19,12 @@ type Place struct {
 }
 
 type NearbyResult struct {
-	ID        string  `db:"id"`
-	Name      string  `db:"name"`
-	Type      string  `db:"type"`
-	Lat       float64 `db:"lat"`
-	Lng       float64 `db:"lng"`
-	PhotoURL  string  `db:"photo_url"`
-	DistanceM float64 `db:"distance_m"`
+	ID         string         `db:"id"`
+	Name       string         `db:"name"`
+	Type       string         `db:"type"`
+	Lat        float64        `db:"lat"`
+	Lng        float64        `db:"lng"`
+	PhotoURL   string         `db:"photo_url"`
+	DistanceM  float64        `db:"distance_m"`
+	ActiveTags pq.StringArray `db:"active_tags"`
 }
