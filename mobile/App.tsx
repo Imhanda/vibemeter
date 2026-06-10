@@ -15,8 +15,7 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { useAuthStore } from "./src/store/useAuthStore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./src/config/firebase";
-
-// ── Navigator param types ─────────────────────────────────────────────────────
+import { C } from "./src/theme";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -31,24 +30,23 @@ type TabParamList = {
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator<TabParamList>();
+const Tab   = createBottomTabNavigator<TabParamList>();
 
-// ── Bottom tab navigator ──────────────────────────────────────────────────────
+const STACK_HEADER = {
+  headerStyle: { backgroundColor: C.bgSurface },
+  headerShadowVisible: false,
+  headerTintColor: C.teal,
+  headerTitleStyle: { color: C.textPrimary, fontWeight: "700" as const },
+  contentStyle: { backgroundColor: C.bgBase },
+};
 
 function VenueStack() {
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: "#0f0f14" },
-        headerTintColor: "#14b8a6",
-        headerTitleStyle: { color: "#fff", fontWeight: "700" },
-        contentStyle: { backgroundColor: "#0f0f14" },
-      }}
-    >
+    <Stack.Navigator screenOptions={STACK_HEADER}>
       <Stack.Screen
         name="VenueList"
         component={VenueListScreen}
-        options={{ title: "Nearby Venues" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="VenueDetail"
@@ -60,10 +58,10 @@ function VenueStack() {
         component={CheckInScreen}
         options={({ navigation }) => ({
           title: "Check the Vibe",
-          presentation: "modal",
+          presentation: "formSheet",
           headerLeft: () => (
             <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12}>
-              <Text style={{ color: "#14b8a6", fontSize: 16 }}>Cancel</Text>
+              <Text style={{ color: C.raging, fontSize: 16, fontWeight: "600" }}>Cancel</Text>
             </TouchableOpacity>
           ),
         })}
@@ -77,40 +75,44 @@ function Tabs() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: "#0f0f14", borderTopColor: "#1a1a22" },
-        tabBarActiveTintColor: "#14b8a6",
-        tabBarInactiveTintColor: "#555",
+        tabBarStyle: {
+          backgroundColor: C.bgSurface,
+          borderTopColor: C.border,
+          borderTopWidth: 1,
+          height: 84,
+          paddingBottom: 24,
+          paddingTop: 8,
+        },
+        tabBarActiveTintColor: C.teal,
+        tabBarInactiveTintColor: C.textMuted,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" as const },
       }}
     >
       <Tab.Screen
         name="Venues"
         component={VenueStack}
         options={{
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 18, color }}>📍</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>📍</Text>,
         }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 18, color }}>👤</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>👤</Text>,
           headerShown: true,
           headerTitle: "My Profile",
-          headerStyle: { backgroundColor: "#0f0f14" },
-          headerTitleStyle: { color: "#fff", fontWeight: "700" },
+          ...STACK_HEADER,
         }}
       />
     </Tab.Navigator>
   );
 }
 
-// ── Root ─────────────────────────────────────────────────────────────────────
-
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const { userId, setUser, clearUser } = useAuthStore();
 
-  // Listen for Firebase auth state changes
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -124,23 +126,19 @@ export default function App() {
     return unsub;
   }, []);
 
-  if (showSplash) {
-    return (
-      <>
-        <StatusBar style="light" />
-        <SplashScreen onDone={() => setShowSplash(false)} />
-      </>
-    );
-  }
+  if (showSplash) return (
+    <>
+      <StatusBar style="light" />
+      <SplashScreen onDone={() => setShowSplash(false)} />
+    </>
+  );
 
-  if (!userId) {
-    return (
-      <>
-        <StatusBar style="light" />
-        <LoginScreen />
-      </>
-    );
-  }
+  if (!userId) return (
+    <>
+      <StatusBar style="light" />
+      <LoginScreen />
+    </>
+  );
 
   return (
     <NavigationContainer>
