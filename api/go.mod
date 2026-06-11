@@ -1,6 +1,6 @@
 module vibemeter
 
-go 1.26.1
+go 1.23
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.36.0 // indirect
