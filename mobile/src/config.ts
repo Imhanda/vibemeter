@@ -4,12 +4,16 @@ import Constants from "expo-constants";
 // This means you never need to hardcode or update the IP when your
 // Mac changes networks — the QR code already knows the right address.
 function getApiBaseUrl(): string {
+  // AWS EC2 deployment — Nginx listens on port 80
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
   const hostUri = Constants.expoConfig?.hostUri; // e.g. "192.168.1.15:8081"
   if (hostUri) {
     const host = hostUri.split(":")[0]; // strip the Metro port
     return `http://${host}:8080`;
   }
-  // Fallback for native builds — replace with your Mac's local IP
+  // Fallback for native builds
   return "http://192.168.1.11:8080";
 }
 
