@@ -455,68 +455,57 @@ This is picked up by `mobile/src/config.ts` at build time and overrides the
 local IP detection. The WebSocket URL is derived automatically
 (`http://` → `ws://`) so no other changes are needed.
 
-### Regenerate native project with new env variable
+### Build and install on physical iPhone
 
-Run this once from the `mobile/` folder whenever env variables change:
+Plug your iPhone into your Mac via USB, unlock it, and tap **Trust This Computer** when prompted. Then run:
 
 ```bash
 cd mobile
-npx expo prebuild --platform ios --clean
+npx expo run:ios --device
 ```
 
-This rewrites the `mobile/ios/` native project with the updated config baked in.
+When it shows a picker, select your physical iPhone (not the simulator):
 
-> Skip `--clean` on subsequent builds if you haven't changed `app.json` or
-> native dependencies — it's faster.
+```
+? Select a device ›
+  ❯ Vipin's iPhone        ← select this
+    iPhone 17 Pro (simulator)
+```
 
-### Open in Xcode and sign the app
+- First build: 5–10 minutes
+- Subsequent builds: 1–2 minutes
+- The app installs and opens on your iPhone automatically
+
+> If iPhone prompts **"Developer Mode required"**:
+> `Settings → Privacy & Security → Developer Mode → Enable` → restart iPhone → re-run the command
+
+### Using Xcode instead of the CLI
+
+If you prefer to build from Xcode directly:
 
 ```bash
 open mobile/ios/VibeMeter.xcworkspace
 ```
 
-Always open the `.xcworkspace` file, **not** `.xcodeproj` — CocoaPods
-dependencies only load correctly from the workspace.
+Always open `.xcworkspace`, **not** `.xcodeproj` — CocoaPods only loads via the workspace.
 
 In Xcode:
-
-1. Click the **VibeMeter** project in the left sidebar (the top-most item)
-2. Select the **VibeMeter** target (under Targets)
-3. Click the **Signing & Capabilities** tab
-4. Check **Automatically manage signing**
-5. Under **Team** — select your Apple ID (add one via `Xcode → Settings → Accounts → +` if none listed)
-6. Xcode will auto-generate a provisioning profile
-
-### Select your iPhone as the target device
-
-1. Plug your iPhone into your Mac via USB
-2. Tap **Trust This Computer** on iPhone when prompted, enter your passcode
-3. In the Xcode toolbar (top centre), click the device selector dropdown
-4. Your iPhone should appear by name — select it
-5. If it shows **"not registered"** — click **Register Device** in the Signing tab
-
-### Build and install
-
-Click the **▶ Run** button (or press `Cmd + R`).
-
-- First build: 5–10 minutes (compiles all native dependencies)
-- Subsequent builds: 1–2 minutes (only changed files recompile)
-- The app installs directly on your iPhone and launches automatically
-
-> If Xcode shows a **"Developer Mode"** prompt on iPhone:
-> `iPhone Settings → Privacy & Security → Developer Mode → Enable` → restart iPhone → re-run
+1. Click **VibeMeter** in the left sidebar → **Signing & Capabilities** tab
+2. Check **Automatically manage signing**
+3. Set **Team** to your Apple ID (`Xcode → Settings → Accounts → +` to add one)
+4. Select your iPhone from the device dropdown in the toolbar
+5. Press **`Cmd + R`** to build and install
 
 ### Verify requests hit AWS
 
-Once the app opens on your iPhone, check that it's talking to EC2:
+Once the app opens, check it's talking to EC2:
 
 ```bash
-# From your local Mac terminal
 curl http://13.63.7.88/health
 # Expected: {"status":"ok"}
 ```
 
-Watch live API logs as you navigate the app:
+Watch live API logs as you use the app:
 
 ```bash
 aws ssm send-command \
@@ -529,14 +518,13 @@ aws ssm send-command \
 
 You should see `[GIN] 200 | GET /v1/places/nearby` as the home screen loads.
 
-### Re-deploying after API or code changes
+### Re-deploying after changes
 
 | What changed | What to do |
 |---|---|
 | Go API code | Rebuild Docker image on Mac → push to Docker Hub → pull on EC2 (see Updating section) |
-| Mobile JS/TS code only | `Cmd + R` in Xcode to rebuild and reinstall |
-| `mobile/.env` or `app.json` | Re-run `npx expo prebuild --platform ios` → `Cmd + R` in Xcode |
-| Native dependencies (`package.json`) | Re-run `npx expo prebuild --platform ios --clean` → `Cmd + R` in Xcode |
+| Mobile JS/TS only | `npx expo run:ios --device` or `Cmd + R` in Xcode |
+| `mobile/.env` changed | `npx expo run:ios --device` (env is baked in at build time) |
 
 ---
 
