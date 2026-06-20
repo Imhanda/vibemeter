@@ -441,7 +441,7 @@ sudo docker compose -f docker-compose.prod.yml logs -f api
 
 ---
 
-## Step 12 — Point Mobile App at AWS and Build
+## Step 12 — Point Mobile App at AWS and Build on iPhone via Xcode
 
 ### Create mobile `.env`
 
@@ -455,33 +455,88 @@ This is picked up by `mobile/src/config.ts` at build time and overrides the
 local IP detection. The WebSocket URL is derived automatically
 (`http://` → `ws://`) so no other changes are needed.
 
-### Build and install on iPhone
+### Regenerate native project with new env variable
+
+Run this once from the `mobile/` folder whenever env variables change:
 
 ```bash
 cd mobile
-npx expo run:ios
+npx expo prebuild --platform ios --clean
 ```
 
-- Plug your iPhone into your Mac via USB before running this
-- Tap **Trust** on the iPhone when prompted
-- First build takes 5–10 minutes; subsequent builds are faster
-- The app will install and open automatically on your iPhone
+This rewrites the `mobile/ios/` native project with the updated config baked in.
+
+> Skip `--clean` on subsequent builds if you haven't changed `app.json` or
+> native dependencies — it's faster.
+
+### Open in Xcode and sign the app
+
+```bash
+open mobile/ios/VibeMeter.xcworkspace
+```
+
+Always open the `.xcworkspace` file, **not** `.xcodeproj` — CocoaPods
+dependencies only load correctly from the workspace.
+
+In Xcode:
+
+1. Click the **VibeMeter** project in the left sidebar (the top-most item)
+2. Select the **VibeMeter** target (under Targets)
+3. Click the **Signing & Capabilities** tab
+4. Check **Automatically manage signing**
+5. Under **Team** — select your Apple ID (add one via `Xcode → Settings → Accounts → +` if none listed)
+6. Xcode will auto-generate a provisioning profile
+
+### Select your iPhone as the target device
+
+1. Plug your iPhone into your Mac via USB
+2. Tap **Trust This Computer** on iPhone when prompted, enter your passcode
+3. In the Xcode toolbar (top centre), click the device selector dropdown
+4. Your iPhone should appear by name — select it
+5. If it shows **"not registered"** — click **Register Device** in the Signing tab
+
+### Build and install
+
+Click the **▶ Run** button (or press `Cmd + R`).
+
+- First build: 5–10 minutes (compiles all native dependencies)
+- Subsequent builds: 1–2 minutes (only changed files recompile)
+- The app installs directly on your iPhone and launches automatically
+
+> If Xcode shows a **"Developer Mode"** prompt on iPhone:
+> `iPhone Settings → Privacy & Security → Developer Mode → Enable` → restart iPhone → re-run
 
 ### Verify requests hit AWS
 
-Watch live API logs while opening the app on your iPhone:
+Once the app opens on your iPhone, check that it's talking to EC2:
 
 ```bash
-# From your local Mac
+# From your local Mac terminal
+curl http://13.63.7.88/health
+# Expected: {"status":"ok"}
+```
+
+Watch live API logs as you navigate the app:
+
+```bash
 aws ssm send-command \
   --region eu-north-1 \
   --instance-ids YOUR_INSTANCE_ID \
   --document-name "AWS-RunShellScript" \
-  --parameters 'commands=["sudo docker logs vibemeter-api-1 -f --tail 20 2>&1"]' \
+  --parameters 'commands=["sudo docker logs vibemeter-api-1 --tail 30 2>&1"]' \
   --query "Command.CommandId" --output text
 ```
 
-You should see `[GIN] 200 | GET /v1/places/nearby` requests appearing as the app loads.
+You should see `[GIN] 200 | GET /v1/places/nearby` as the home screen loads.
+
+### Re-deploying after API or code changes
+
+| What changed | What to do |
+|---|---|
+| Go API code | Rebuild Docker image on Mac → push to Docker Hub → pull on EC2 (see Updating section) |
+| Mobile JS/TS code only | `Cmd + R` in Xcode to rebuild and reinstall |
+| `mobile/.env` or `app.json` | Re-run `npx expo prebuild --platform ios` → `Cmd + R` in Xcode |
+| Native dependencies (`package.json`) | Re-run `npx expo prebuild --platform ios --clean` → `Cmd + R` in Xcode |
 
 ---
 
