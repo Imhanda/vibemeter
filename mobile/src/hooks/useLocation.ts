@@ -28,9 +28,12 @@ export function useLocation(): UseLocationResult {
           setLoading(false);
           return;
         }
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        const pos = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("GPS timeout")), 10000)
+          ),
+        ]);
         if (!cancelled) {
           setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setUsingGPS(true);
