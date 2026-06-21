@@ -17,7 +17,10 @@
       "bundleIdentifier": "com.vibemeter.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "VibeMeter records 10 seconds of ambient audio and transmits it to a processing server to classify music, crowd, and ambient sound levels. The audio is analysed in memory and discarded immediately — it is never stored."
+        "NSMicrophoneUsageDescription": "VibeMeter records 10 seconds of ambient audio and transmits it to a processing server to classify music, crowd, and ambient sound levels. The audio is analysed in memory and discarded immediately — it is never stored.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {

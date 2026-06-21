@@ -25,6 +25,7 @@ export function useLocation(): UseLocationResult {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
           setUsingGPS(false);
+          setLoading(false);
           return;
         }
         const pos = await Location.getCurrentPositionAsync({

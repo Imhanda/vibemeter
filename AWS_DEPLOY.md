@@ -429,7 +429,7 @@ sudo docker compose -f docker-compose.prod.yml up -d
 
 ```bash
 # From your local Mac
-curl http://YOUR_ELASTIC_IP/health
+curl https://YOUR_ELASTIC_IP.nip.io/health
 # Expected: {"status":"ok"}
 
 # Check running containers on EC2
@@ -443,17 +443,21 @@ sudo docker compose -f docker-compose.prod.yml logs -f api
 
 ## Step 12 — Point Mobile App at AWS and Build on iPhone via Xcode
 
-### Create mobile `.env`
+### API URL and auth config
 
-In the `mobile/` folder, create a file called `.env`:
+`mobile/src/config.ts` is hardcoded to the nip.io HTTPS endpoint:
 
 ```
-EXPO_PUBLIC_API_URL=http://YOUR_ELASTIC_IP
+https://YOUR_ELASTIC_IP.nip.io
 ```
 
-This is picked up by `mobile/src/config.ts` at build time and overrides the
-local IP detection. The WebSocket URL is derived automatically
-(`http://` → `ws://`) so no other changes are needed.
+Update `13.63.7.88` in `config.ts` to your Elastic IP if it changes.
+iOS 26 App Transport Security requires HTTPS — nip.io provides a valid hostname
+for free so no certificate setup is needed.
+
+`SKIP_AUTH=true` in `config.ts` makes the app send `X-User-ID: dev-user` instead
+of a Firebase JWT. The EC2 `.env` also has `SKIP_AUTH=true` so the API accepts it.
+Flip both to `false` when you enable real Firebase auth.
 
 ### Build and install on physical iPhone
 
@@ -501,7 +505,7 @@ In Xcode:
 Once the app opens, check it's talking to EC2:
 
 ```bash
-curl http://13.63.7.88/health
+curl https://13.63.7.88.nip.io/health
 # Expected: {"status":"ok"}
 ```
 
@@ -538,7 +542,7 @@ sudo docker logs vibemeter-api-1 -f --tail 20
 - `Connected to Redis` / `Connected to DB` on startup = services are healthy
 
 **Find your iPhone's IP:**
-Open Safari on iPhone → go to `http://13.63.7.88/health` → then check Nginx log for the most recent entry — that IP is your phone.
+Open Safari on iPhone → go to `https://13.63.7.88.nip.io/health` → then check Nginx log for the most recent entry — that IP is your phone.
 
 You should see `[GIN] 200 | GET /v1/places/nearby` as the home screen loads.
 
@@ -617,15 +621,14 @@ sudo docker compose -f docker-compose.prod.yml up -d --no-deps api
 → If API shows "Restarting", check logs: `sudo docker logs vibemeter-api-1 --tail 30`
 
 **App shows "Network request failed" but Safari can reach the server**
-→ iOS App Transport Security (ATS) is blocking HTTP. Confirm `Info.plist` has `NSAllowsArbitraryLoads: true`
-→ Check: `grep -A3 NSAppTransportSecurity mobile/ios/VibeMeter/Info.plist`
-→ If it shows `<false/>`, edit it to `<true/>` and rebuild with `npx expo run:ios --device --configuration Release`
+→ iOS App Transport Security (ATS) requires HTTPS. The app uses `https://YOUR_IP.nip.io` — confirm `mobile/src/config.ts` has the correct nip.io URL
+→ If you see an ATS error in logs and can't use nip.io, `mobile/app.json` `infoPlist` sets `NSAllowsArbitraryLoads: true` as a fallback — rebuild after any `app.json` change
 → Delete the old app from iPhone before installing the new build to avoid running a cached version
 
 **No requests appear in Nginx log when app loads**
-→ App is not reaching EC2 at all — likely ATS blocking HTTP or wrong URL baked into build
-→ Verify `mobile/src/config.ts` returns `http://13.63.7.88` and rebuild
-→ Open Safari on iPhone → `http://13.63.7.88/health` — if this works, network is fine and the issue is in the app build
+→ App is not reaching EC2 at all — likely wrong URL baked into build or ATS blocking
+→ Verify `mobile/src/config.ts` returns `https://13.63.7.88.nip.io` and rebuild
+→ Open Safari on iPhone → `https://13.63.7.88.nip.io/health` — if this works, network is fine and the issue is in the app build
 
 **RDS schema missing / 500 on `/v1/places/nearby`**
 → DB migrations were never applied. Run from EC2 SSM session:

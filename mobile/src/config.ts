@@ -1,20 +1,8 @@
 import Constants from "expo-constants";
 
-// Derive the API host from the Expo dev server's own IP at runtime.
-// This means you never need to hardcode or update the IP when your
-// Mac changes networks — the QR code already knows the right address.
 function getApiBaseUrl(): string {
-  // AWS EC2 deployment — Nginx listens on port 80
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
-  const hostUri = Constants.expoConfig?.hostUri; // e.g. "192.168.1.15:8081"
-  if (hostUri) {
-    const host = hostUri.split(":")[0]; // strip the Metro port
-    return `http://${host}:8080`;
-  }
-  // Fallback for native builds
-  return "http://192.168.1.11:8080";
+  // AWS EC2 via nip.io HTTPS (iOS 26 ATS requires HTTPS for all traffic)
+  return "https://13.63.7.88.nip.io";
 }
 
 export const API_BASE_URL = getApiBaseUrl();

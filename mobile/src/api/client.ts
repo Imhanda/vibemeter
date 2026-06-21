@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, SKIP_AUTH, DEV_USER_ID } from "../config";
 import { auth } from "../config/firebase";
 
 interface RequestOptions {
@@ -11,10 +11,14 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     "Content-Type": "application/json",
   };
 
-  const user = auth.currentUser;
-  if (user) {
-    const token = await user.getIdToken();
-    headers["Authorization"] = `Bearer ${token}`;
+  if (SKIP_AUTH) {
+    headers["X-User-ID"] = DEV_USER_ID;
+  } else {
+    const user = auth.currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      headers["Authorization"] = `Bearer ${token}`;
+    }
   }
 
   const res = await fetch(`${API_BASE_URL}${path}`, {

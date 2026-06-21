@@ -3,7 +3,10 @@
     "allow": [
       "Bash(git rm:*)",
       "Bash(npm list:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(aws ssm *)",
+      "Bash(grep -i \"NSApp\\\\|arbitrary\\\\|transport\" \"/Users/vipinhanda/Library/Developer/Xcode/DerivedData/VibeMeter-bzmmwzcdinvuvocyqpqjvydyolxw/Build/Products/Release-iphoneos/VibeMeter.app/Info.plist\")",
+      "Read(//Users/vipinhanda/Library/Developer/Xcode/DerivedData/VibeMeter-bzmmwzcdinvuvocyqpqjvydyolxw/Build/Products/Release-iphoneos/VibeMeter.app/**)"
     ]
   }
 }
