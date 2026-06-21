@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VibeMeter — Privacy Policy</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 720px;
+      margin: 48px auto;
+      padding: 0 24px;
+      color: #1a1a1a;
+      line-height: 1.7;
+    }
+    h1 { font-size: 1.8rem; margin-bottom: 4px; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; margin-bottom: 6px; }
+    p, li { font-size: 0.97rem; }
+    ul { padding-left: 1.4rem; }
+    .updated { color: #666; font-size: 0.875rem; margin-bottom: 2rem; }
+    a { color: #0070f3; }
+  </style>
+</head>
+<body>
+
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: June 21, 2026</p>
+
+  <p>VibeMeter ("we", "our", or "the app") is a nightlife vibe-scoring app that lets users check in to nearby venues using short ambient audio recordings. This policy explains what data we collect, how we use it, and how we protect it.</p>
+
+  <h2>1. Microphone Access</h2>
+  <p>When you perform an audio check-in, the app records <strong>10 seconds of ambient audio</strong> through your device's microphone. This audio is:</p>
+  <ul>
+    <li>Transmitted over HTTPS to our processing server</li>
+    <li>Analysed in memory to extract three numeric signals: crowd energy, music energy, and ambient volume level</li>
+    <li><strong>Discarded immediately after analysis</strong> — the raw audio is never stored, logged, or shared</li>
+  </ul>
+  <p>Only the three numeric signals derived from the audio are saved, not the audio itself.</p>
+
+  <h2>2. Location Access</h2>
+  <p>The app requests access to your device's location (while the app is in use) to:</p>
+  <ul>
+    <li>Show you venues near your current position</li>
+    <li>Verify you are within range of a venue before allowing a check-in</li>
+  </ul>
+  <p>Your precise location is used in real time for these purposes. We do not build a history of your locations or share your location with third parties.</p>
+
+  <h2>3. Account Information</h2>
+  <p>You sign in with your Google account via Firebase Authentication. We receive your <strong>name and email address</strong> from Google solely to create and identify your account. We do not access your Google contacts, calendar, or any other Google data.</p>
+
+  <h2>4. Check-In Data</h2>
+  <p>When you submit a check-in, we store:</p>
+  <ul>
+    <li>The three numeric vibe signals (crowd energy, music energy, ambient level)</li>
+    <li>The venue ID and approximate timestamp</li>
+    <li>Your account identifier (to enforce rate limits and calculate trust scores)</li>
+  </ul>
+  <p>This data is used to compute real-time vibe scores for venues and to award in-app badges. It is not sold or shared with advertisers.</p>
+
+  <h2>5. Data Retention</h2>
+  <p>Vibe check-in data is used in a rolling 3-hour aggregation window and then archived. You may request deletion of your account and associated data at any time by contacting us at the address below.</p>
+
+  <h2>6. Third-Party Services</h2>
+  <ul>
+    <li><strong>Firebase (Google)</strong> — authentication and account management. Google's privacy policy applies: <a href="https://policies.google.com/privacy">policies.google.com/privacy</a></li>
+    <li><strong>OpenStreetMap</strong> — venue data is sourced from OpenStreetMap, which is publicly available map data</li>
+  </ul>
+  <p>We do not use advertising SDKs, analytics SDKs, or crash reporting services that collect personal data.</p>
+
+  <h2>7. Children's Privacy</h2>
+  <p>VibeMeter is intended for users aged 17 and over. We do not knowingly collect personal information from anyone under 17.</p>
+
+  <h2>8. Changes to This Policy</h2>
+  <p>If we make material changes to this policy, we will update the "Last updated" date above. Continued use of the app after changes constitutes acceptance of the updated policy.</p>
+
+  <h2>9. Contact</h2>
+  <p>For privacy questions or data deletion requests, contact us at:<br />
+  <a href="mailto:vipinhanda2013@gmail.com">vipinhanda2013@gmail.com</a></p>
+
+</body>
+</html>
