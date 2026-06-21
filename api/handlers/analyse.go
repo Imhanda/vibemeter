@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -64,9 +65,10 @@ func AnalyseAudio(c *gin.Context) {
 	}
 	mw.Close()
 
-	url := fmt.Sprintf("%s/analyse", config.C.YAMNetURL)
-	resp, err := http.Post(url, mw.FormDataContentType(), &buf) //nolint:gosec
+	yamnetURL := fmt.Sprintf("%s/analyse", config.C.YAMNetURL)
+	resp, err := http.Post(yamnetURL, mw.FormDataContentType(), &buf) //nolint:gosec
 	if err != nil {
+		log.Printf("yamnet POST to %q failed: %v", yamnetURL, err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "audio analysis service unavailable"})
 		return
 	}

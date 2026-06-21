@@ -8,18 +8,21 @@ Estimated cost: ~$0–5/month for the first 12 months.
 ## Architecture Overview
 
 ```
-Mobile App (Expo)
-      │
+Mobile App (Expo / iOS)
+      │  HTTPS
       ▼
-Elastic IP → EC2 t3.micro
-                ├── Nginx (reverse proxy, port 80)
-                ├── Go API (Docker, port 8080)
-                ├── Redis 7 (Docker, port 6379)
-                └── YAMNet ML (Docker, port 8082)
-                      │
-              RDS db.t3.micro
-              (PostgreSQL 16 + PostGIS)
+YOUR_IP.nip.io → Elastic IP → EC2 t3.micro
+                                  ├── Nginx (TLS termination, ports 80 + 443)
+                                  ├── Go API (Docker, port 8080)
+                                  ├── Redis 7 (Docker, port 6379)
+                                  └── YAMNet ML (Docker, port 8082)
+                                        │
+                                RDS db.t3.micro
+                                (PostgreSQL 16 + PostGIS)
 
+nip.io — free wildcard DNS: YOUR_IP.nip.io → YOUR_IP (no signup needed)
+Let's Encrypt — free SSL cert for the nip.io hostname (auto-renews)
+OpenStreetMap Overpass API — free venue data fetched on demand per location
 SQS (async jobs — leaderboards, push fan-out, spam detection)
 ```
 
@@ -289,11 +292,11 @@ sudo dnf install -y nginx
 sudo systemctl enable nginx
 sudo systemctl start nginx
 
-# Create reverse proxy config
+# Create reverse proxy config — use YOUR Elastic IP in the server_name
 sudo tee /etc/nginx/conf.d/vibemeter.conf > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name _;
+    server_name 13.63.7.88.nip.io;   # replace with YOUR_ELASTIC_IP.nip.io
 
     location / {
         proxy_pass http://localhost:8080;
@@ -302,11 +305,40 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 EOF
 
 sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Enable HTTPS with Let's Encrypt (required for iOS 26+)
+
+iOS 26 App Transport Security blocks plain HTTP connections from apps — HTTPS is required even if `NSAllowsArbitraryLoads` is set. Use `nip.io` (free wildcard DNS) with a free Let's Encrypt certificate:
+
+```bash
+# nip.io automatically resolves YOUR_ELASTIC_IP.nip.io → YOUR_ELASTIC_IP
+# No signup or DNS configuration needed
+
+# Install certbot
+sudo dnf install -y certbot python3-certbot-nginx
+# If dnf doesn't have it, use pip:
+# sudo python3 -m pip install certbot certbot-nginx
+# sudo ln -s /usr/local/bin/certbot /usr/bin/certbot
+
+# Obtain SSL certificate (port 80 must be open for HTTP-01 challenge)
+sudo certbot --nginx -d 13.63.7.88.nip.io \   # replace with YOUR_ELASTIC_IP.nip.io
+  --non-interactive --agree-tos \
+  --email YOUR_EMAIL@example.com
+```
+
+Certbot automatically updates the Nginx config to serve HTTPS and redirect HTTP → HTTPS. The certificate lasts 90 days and auto-renews via a cron job certbot installs.
+
+Verify from your iPhone browser:
+```
+https://13.63.7.88.nip.io/health   # should return {"status":"ok"} with a padlock
 ```
 
 ### Add swap space (prevents OOM on t3.micro)
@@ -322,25 +354,31 @@ free -h
 
 ---
 
-## Step 9 — Build API Image Locally and Push to Docker Hub
+## Step 9 — Build Images Locally and Push to Docker Hub
 
-The t3.micro (1GB RAM) cannot reliably compile the Go API or install TensorFlow for YAMNet — it runs out of memory. Build images on your Mac and push to Docker Hub instead.
+The t3.micro (1 GB RAM) cannot reliably compile Go or install TensorFlow — it runs out of memory. Build both images on your Mac and push to Docker Hub instead.
 
 ### Create Docker Hub account
 
 Sign up at `hub.docker.com` (free). Note your username.
 
-### Build and push API image from your Mac
+### Build and push both images from your Mac
 
 ```bash
 # Login to Docker Hub
 docker login
 
-# Build for Linux AMD64 (EC2 architecture)
 cd /path/to/vibemeter
+
+# Build Go API for Linux AMD64 (EC2 is x86_64; Mac is arm64 — must cross-compile)
 docker buildx build --platform linux/amd64 \
   -t YOUR_DOCKERHUB_USERNAME/vibemeter-api:latest \
   ./api --push
+
+# Build YAMNet sidecar (Python + TensorFlow) — also too heavy to build on EC2
+docker buildx build --platform linux/amd64 \
+  -t YOUR_DOCKERHUB_USERNAME/vibemeter-yamnet:latest \
+  ./infra/yamnet --push
 ```
 
 ---
@@ -369,7 +407,7 @@ services:
     restart: unless-stopped
 
   yamnet:
-    build: ./infra/yamnet
+    image: YOUR_DOCKERHUB_USERNAME/vibemeter-yamnet:latest
     restart: unless-stopped
     ports:
       - "8082:8082"
@@ -385,6 +423,9 @@ services:
       - yamnet
 EOF
 ```
+
+> **Do not use `build: ./infra/yamnet`** — TensorFlow OOMs the t3.micro during build.
+> Use the pre-built Docker Hub image instead.
 
 ### Create `.env` file
 
@@ -413,15 +454,18 @@ The Google/Firebase values are in your local `infra/.env`.
 cd ~/vibemeter
 sudo docker login
 
-# Pull API image from Docker Hub
-sudo docker compose -f docker-compose.prod.yml pull api
-
-# Build YAMNet on EC2 (Python/TensorFlow — build separately to avoid OOM)
-sudo docker compose -f docker-compose.prod.yml build yamnet
+# Pull all images from Docker Hub
+sudo docker compose -f docker-compose.prod.yml pull
 
 # Start everything
 sudo docker compose -f docker-compose.prod.yml up -d
 ```
+
+> YAMNet downloads the TF Hub model (~17 MB) on first startup. Wait ~30 seconds before testing audio analysis. Check readiness with:
+> ```bash
+> sudo docker compose -f docker-compose.prod.yml logs yamnet --tail 5
+> # Ready when you see: "YAMNet ready — 521 classes"
+> ```
 
 ---
 
@@ -629,6 +673,22 @@ sudo docker compose -f docker-compose.prod.yml up -d --no-deps api
 → App is not reaching EC2 at all — likely wrong URL baked into build or ATS blocking
 → Verify `mobile/src/config.ts` returns `https://13.63.7.88.nip.io` and rebuild
 → Open Safari on iPhone → `https://13.63.7.88.nip.io/health` — if this works, network is fine and the issue is in the app build
+
+**"Audio analysis service unavailable" after recording**
+→ The API cannot reach the YAMNet container. Most common cause: `YAMNET_URL=http://localhost:8082` in `.env` — `localhost` inside a container refers to that container itself, not the yamnet sidecar.
+→ Must be: `YAMNET_URL=http://yamnet:8082` (Docker service name as hostname)
+→ Fix and restart: `sudo docker compose -f docker-compose.prod.yml up -d --no-deps api`
+→ Verify connectivity from inside the API container: `sudo docker exec $(sudo docker ps -q --filter "name=api") wget -qO- http://yamnet:8082/health`
+
+**Home screen never loads venues (no network request reaches Nginx)**
+→ The `useLocation` hook left `loading: true` permanently when location permission was denied, blocking the `load()` call in VenueListScreen.
+→ This was fixed in `mobile/src/hooks/useLocation.ts` — `setLoading(false)` is now called before the early return on permission deny.
+→ If you see this again after changes, check that `useLocation` always reaches `setLoading(false)` in both the permission-denied and GPS-error paths.
+
+**Home screen loads but shows only Bengaluru venues regardless of location**
+→ `VenueListScreen` was using `DEFAULT_LOCATION` (hardcoded Bengaluru coords) instead of the GPS coords from `useLocation`.
+→ Fixed: the `load()` callback now uses `coords.lat, coords.lng` from the hook, and `coords` is in the `useCallback` dependency array.
+→ Venue data for new locations is fetched automatically from OpenStreetMap Overpass API the first time a location is searched (< 5 venues in DB for that area). First load in a new city may take 2–5 s.
 
 **RDS schema missing / 500 on `/v1/places/nearby`**
 → DB migrations were never applied. Run from EC2 SSM session:

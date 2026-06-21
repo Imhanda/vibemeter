@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -115,6 +116,20 @@ func GetNearbyPlaces(c *gin.Context) {
 	if err := db.DB.Select(&rows, q, lat, lng, radius, venueType, tagFilter, limit); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
 		return
+	}
+
+	// If the area has fewer than 5 places total, seed from OpenStreetMap on demand.
+	// Check total (unfiltered) so a type/tag filter doesn't cause repeated Overpass calls.
+	var totalInArea int
+	_ = db.DB.Get(&totalInArea,
+		`SELECT COUNT(*) FROM places
+		 WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, $3)`,
+		lat, lng, radius)
+	if totalInArea < 5 {
+		seedFromOverpass(lat, lng, radius)
+		if err := db.DB.Select(&rows, q, lat, lng, radius, venueType, tagFilter, limit); err != nil {
+			log.Printf("places: re-query after overpass seed: %v", err)
+		}
 	}
 
 	result := make([]nearbyPlaceResponse, 0, len(rows))
