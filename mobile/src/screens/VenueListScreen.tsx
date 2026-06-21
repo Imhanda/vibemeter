@@ -147,11 +147,6 @@ export function VenueListScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* DEBUG — shows exact coords being sent; remove once location verified */}
-        <Text style={styles.debugCoords}>
-          {usingGPS ? "GPS" : "DEFAULT"} · {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
-        </Text>
-
         {/* Search bar */}
         <View style={[styles.searchWrap, searchFocused && styles.searchWrapFocused]}>
           <Text style={styles.searchIcon}>⌕</Text>
@@ -348,10 +343,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.border,
   },
   locationChipText: { color: C.textSecondary, fontSize: 11 },
-  debugCoords: {
-    color: C.teal, fontSize: 10, fontFamily: "monospace",
-    textAlign: "center", marginBottom: 6, opacity: 0.7,
-  },
 
   searchWrap: {
     flexDirection: "row", alignItems: "center",
