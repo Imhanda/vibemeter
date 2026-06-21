@@ -9,7 +9,7 @@
 Make sure you have all of these before beginning:
 
 - [ ] A **Mac** (MacBook or iMac) running macOS 13 Ventura or newer
-- [ ] An **iPhone** running iOS 16 or newer
+- [ ] An **iPhone** running iOS 16 or newer (iOS 17+ recommended)
 - [ ] The **USB cable** that came with your iPhone (needed for first install only)
 - [ ] An **Apple ID** — the free one you use for the App Store
 - [ ] At least **15 GB of free disk space** on your Mac (Xcode is large)
@@ -199,14 +199,17 @@ npm install
 3. **In the same Terminal tab** (still in the `mobile/` folder), run:
 
 ```
-npx expo run:ios --device
+npx expo run:ios --device --configuration Release
 ```
 
 **What this command does:**
 - Takes all the React Native / JavaScript code and compiles it into a real native iOS app
+- Bundles the JavaScript into the app (the `--configuration Release` flag) so it works without needing your Mac to be running
 - Automatically opens Xcode in the background to handle the compilation
 - Signs the app with your Apple ID so your iPhone accepts it
 - Installs the app directly onto your connected iPhone
+
+> **Important:** Always include `--configuration Release`. Without it, the app expects your Mac to be acting as a local server and will show a blank screen instead of loading.
 
 4. **Apple ID sign-in (first time only):**
    Xcode may open and show a message about needing an account. If it does:
@@ -237,22 +240,25 @@ npx expo run:ios --device
    - Choose any Google account
    - Accept the permissions
 
-3. **Home screen:** You'll see a list of venues (bars, clubs, restaurants in Bengaluru). Browse them and tap any one to see its vibe score.
+3. **Location permission:** The app will ask **"Allow VibeMeter to use your location?"** — tap **Allow While Using App**. This lets it show venues near you. If you tap Don't Allow, it falls back to Bengaluru as a default location.
 
-4. **Check In:**
+4. **Home screen:** You'll see a list of nearby venues (bars, clubs, restaurants). The first time you open the app in a new area it may take a few seconds to load — it's fetching venue data for your location. Browse and tap any venue to see its vibe score.
+
+5. **Check In:**
    - Tap a venue → tap **Check In**
-   - Choose **🎤 Listen** mode: records 10 seconds of ambient audio, analyses it with AI, and scores the vibe
+   - Choose **🎤 Listen** mode: tap the microphone, hold your phone up in the venue, wait 10 seconds while it records ambient audio, then it analyses the sound with AI and generates a vibe score
    - Or choose **⭐ Rate** mode: pick an emoji to manually rate the vibe
    - Tap **Submit Vibe** — your score is saved and the venue's overall score updates in real time
 
-5. **Profile:** Tap the profile tab to see your check-in stats, trust score, and badges earned
+6. **Profile:** Tap the profile tab to see your check-in stats, trust score, and badges earned
 
 ---
 
 ## Troubleshooting
 
-**"Network request failed" on the home screen**
-→ The app connects to a cloud server — confirm your iPhone has an internet connection (Wi-Fi or mobile data).
+**"Network request failed" or home screen doesn't load**
+→ Confirm your iPhone has an internet connection (Wi-Fi or mobile data).
+→ The app requires an internet connection to reach the cloud server — it does not work offline.
 → If your internet is fine, the server may be temporarily down. Let the project owner know.
 
 **"Trust" popup never appeared on iPhone**
@@ -264,11 +270,24 @@ npx expo run:ios --device
 **App crashes when you tap the microphone button**
 → Go to iPhone **Settings** → scroll down to **VibeMeter** → enable **Microphone**.
 
+**"Audio analysis service unavailable" after the 10-second recording**
+→ The AI audio analysis is briefly unavailable. Wait a minute and try again.
+→ If it keeps failing, let the project owner know — the server may need to be restarted.
+
+**Venues don't change when you move to a different area**
+→ Pull down on the venue list to refresh. The first load in a new city or neighbourhood may take a few seconds while venue data is fetched for your location.
+
 **"Too far away" error when checking in**
 → This is disabled for testing — let the project owner know if you see it.
 
 **Xcode says "No signing certificate" or "No accounts"**
 → Open Xcode → Settings (Cmd+,) → Accounts → click + → Add Apple ID. Sign in with the Apple ID you use for the App Store.
+
+**App opens but shows a blank screen**
+→ You may have run the build command without `--configuration Release`. Rebuild:
+```
+npx expo run:ios --device --configuration Release
+```
 
 **`npm install` fails with permission errors**
 → Run this first: `sudo chown -R $(whoami) ~/.npm` then try `npm install` again.
