@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   FlatList,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -10,13 +11,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { getNearbyVenues, searchVenues } from "../api/places";
 import { VenueCard } from "../components/VenueCard";
 import { useVibeStore } from "../store/useVibeStore";
 import { useLocation } from "../hooks/useLocation";
-import { DEFAULT_LOCATION } from "../config";
 import { RootStackParamList } from "../../App";
 import { C } from "../theme";
 
@@ -34,7 +35,8 @@ const VIBE_TAGS: { id: string; label: string }[] = [
   { id: "sports",      label: "⚽ Sports" },
 ];
 
-const RADIUS_STEPS = [500, 1000, 3000, 5000, 15000];
+const RADIUS_MIN = 500;
+const RADIUS_MAX = 15000;
 function formatRadius(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)} km` : `${m} m`;
 }
@@ -73,9 +75,9 @@ export function VenueListScreen({ navigation }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [radiusIdx, setRadiusIdx] = useState(1); // default 1km
-
-  const radius = RADIUS_STEPS[radiusIdx];
+  const [radius, setRadius] = useState(1000);
+  const [radiusModalVisible, setRadiusModalVisible] = useState(false);
+  const [draftRadius, setDraftRadius] = useState(1000);
 
   const load = useCallback(
     async (isRefresh = false, r?: number) => {
@@ -84,7 +86,7 @@ export function VenueListScreen({ navigation }: Props) {
       try {
         const type = filter === "all" ? undefined : filter;
         const data = await getNearbyVenues(
-          DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng,
+          coords.lat, coords.lng,
           r ?? radius, type, undefined, tagFilter
         );
         setVenues(data);
@@ -94,7 +96,7 @@ export function VenueListScreen({ navigation }: Props) {
         isRefresh ? setRefreshing(false) : setLoading(false);
       }
     },
-    [filter, tagFilter, radius, setVenues]
+    [coords, filter, tagFilter, radius, setVenues]
   );
 
   const handleSearch = async (query: string) => {
@@ -111,10 +113,15 @@ export function VenueListScreen({ navigation }: Props) {
     }
   };
 
-  function cycleRadius() {
-    const next = (radiusIdx + 1) % RADIUS_STEPS.length;
-    setRadiusIdx(next);
-    load(false, RADIUS_STEPS[next]);
+  function openRadiusModal() {
+    setDraftRadius(radius);
+    setRadiusModalVisible(true);
+  }
+
+  function confirmRadius() {
+    setRadius(draftRadius);
+    load(false, draftRadius);
+    setRadiusModalVisible(false);
   }
 
   function toggleTag(id: string) {
@@ -178,8 +185,8 @@ export function VenueListScreen({ navigation }: Props) {
           </TouchableOpacity>
         ))}
         <View style={styles.spacer} />
-        {/* Tap-cycle radius chip */}
-        <TouchableOpacity style={styles.radiusChip} onPress={cycleRadius}>
+        {/* Radius chip — opens slider sheet */}
+        <TouchableOpacity style={styles.radiusChip} onPress={openRadiusModal}>
           <Text style={styles.radiusChipText}>⊙ {formatRadius(radius)}</Text>
         </TouchableOpacity>
       </View>
@@ -223,6 +230,48 @@ export function VenueListScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* ── Radius slider modal ───────────────────────── */}
+      <Modal
+        visible={radiusModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setRadiusModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.dragHandle} />
+            <Text style={styles.modalTitle}>Search Radius</Text>
+            <Text style={styles.modalValue}>{formatRadius(draftRadius)}</Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={RADIUS_MIN}
+              maximumValue={RADIUS_MAX}
+              step={100}
+              value={draftRadius}
+              onValueChange={(v) => setDraftRadius(Math.round(v))}
+              minimumTrackTintColor={C.teal}
+              maximumTrackTintColor={C.border}
+              thumbTintColor={C.teal}
+            />
+            <View style={styles.sliderLabels}>
+              <Text style={styles.sliderLabel}>{formatRadius(RADIUS_MIN)}</Text>
+              <Text style={styles.sliderLabel}>{formatRadius(RADIUS_MAX)}</Text>
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setRadiusModalVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalOkBtn} onPress={confirmRadius}>
+                <Text style={styles.modalOkText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {!loading && !error && (
         <View style={{ flex: 1 }}>
@@ -337,6 +386,89 @@ const styles = StyleSheet.create({
 
   fadeBottom: {
     position: "absolute", bottom: 0, left: 0, right: 0, height: 56,
+  },
+
+  // Radius modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: C.bgSurface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 44,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: C.border,
+  },
+  dragHandle: {
+    width: 40, height: 4,
+    backgroundColor: C.border,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    color: C.textMuted,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalValue: {
+    color: C.textPrimary,
+    fontSize: 40,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  slider: {
+    width: "100%",
+    height: 44,
+    marginTop: 8,
+  },
+  sliderLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 2,
+  },
+  sliderLabel: {
+    color: C.textMuted,
+    fontSize: 11,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 28,
+  },
+  modalCancelBtn: {
+    flex: 1, paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: C.bgElevated,
+    borderWidth: 1, borderColor: C.border,
+    alignItems: "center",
+  },
+  modalCancelText: {
+    color: C.textSecondary,
+    fontWeight: "600",
+    fontSize: 15,
+  },
+  modalOkBtn: {
+    flex: 1, paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: C.teal,
+    alignItems: "center",
+  },
+  modalOkText: {
+    color: C.bgBase,
+    fontWeight: "700",
+    fontSize: 15,
   },
 
   center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 8, paddingTop: 60 },
