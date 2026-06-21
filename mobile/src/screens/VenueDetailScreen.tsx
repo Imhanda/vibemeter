@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -149,26 +150,10 @@ export function VenueDetailScreen({ route, navigation }: Props) {
           </Text>
         </View>
 
-        {/* ── CTA row — ABOVE fold ── */}
-        <View style={styles.ctaRow}>
+        {/* ── CTA: circular check-vibe button ── */}
+        <View style={styles.ctaSection}>
           <TouchableOpacity
-            style={[styles.bellBtn, following && { borderColor: C.raging }]}
-            onPress={toggleFollow}
-            disabled={followLoading}
-          >
-            {followLoading
-              ? <ActivityIndicator size="small" color={C.teal} />
-              : <>
-                  <Text style={styles.bellIcon}>{following ? "🔕" : "🔔"}</Text>
-                  <Text style={[styles.bellLabel, following && { color: C.raging }]}>
-                    {following ? "Unsubscribe" : "Notify me"}
-                  </Text>
-                </>
-            }
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.ctaBtnWrap}
+            style={styles.circleWrap}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               navigation.navigate("CheckIn", { placeId, name: route.params.name });
@@ -177,12 +162,43 @@ export function VenueDetailScreen({ route, navigation }: Props) {
             <LinearGradient
               colors={grad}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.ctaBtn}
+              end={{ x: 1, y: 1 }}
+              style={styles.circleBtn}
             >
-              <Text style={styles.ctaBtnText}>Check the Vibe  ▶</Text>
+              <Text style={styles.circleBtnIcon}>🎤</Text>
             </LinearGradient>
+            <Text style={styles.circleBtnLabel}>Check the Vibe</Text>
           </TouchableOpacity>
+
+          {/* Notify Me + Get Directions */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.actionBtn, following && { borderColor: C.raging }]}
+              onPress={toggleFollow}
+              disabled={followLoading}
+            >
+              {followLoading
+                ? <ActivityIndicator size="small" color={C.teal} />
+                : <>
+                    <Text style={styles.actionBtnIcon}>{following ? "🔕" : "🔔"}</Text>
+                    <Text style={[styles.actionBtnLabel, following && { color: C.raging }]}>
+                      {following ? "Unsubscribe" : "Notify Me"}
+                    </Text>
+                  </>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => {
+                const query = encodeURIComponent(route.params.name);
+                Linking.openURL(`https://maps.google.com/maps?q=${query}`);
+              }}
+            >
+              <Text style={styles.actionBtnIcon}>📍</Text>
+              <Text style={styles.actionBtnLabel}>Get Directions</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </LinearGradient>
 
@@ -273,19 +289,24 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center" },
   metaChip: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3 },
   metaChipText: { fontSize: 12, fontWeight: "700" },
-  checkInCount: { color: C.textMuted, fontSize: 12 },
+  checkInCount: { color: C.textSecondary, fontSize: 13, fontWeight: "500" },
 
-  ctaRow: { flexDirection: "row", gap: 10 },
-  bellBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingVertical: 12, paddingHorizontal: 16, borderRadius: 14,
+  ctaSection: { alignItems: "center", gap: 16 },
+  circleWrap: { alignItems: "center", gap: 8 },
+  circleBtn: {
+    width: 110, height: 110, borderRadius: 55,
+    alignItems: "center", justifyContent: "center",
+  },
+  circleBtnIcon: { fontSize: 38 },
+  circleBtnLabel: { color: C.textPrimary, fontSize: 14, fontWeight: "700", letterSpacing: 0.3 },
+  actionRow: { flexDirection: "row", gap: 12, width: "100%" },
+  actionBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 13, paddingHorizontal: 12, borderRadius: 14,
     borderWidth: 1, borderColor: C.border, backgroundColor: C.bgElevated,
   },
-  bellIcon: { fontSize: 16 },
-  bellLabel: { color: C.textSecondary, fontSize: 13, fontWeight: "600" },
-  ctaBtnWrap: { flex: 1, borderRadius: 14, overflow: "hidden" },
-  ctaBtn: { paddingVertical: 14, alignItems: "center", justifyContent: "center" },
-  ctaBtnText: { color: "#fff", fontSize: 15, fontWeight: "800", letterSpacing: 0.5 },
+  actionBtnIcon: { fontSize: 16 },
+  actionBtnLabel: { color: C.textSecondary, fontSize: 13, fontWeight: "600" },
 
   summaryCard: {
     flexDirection: "row", alignItems: "flex-start", gap: 10,
