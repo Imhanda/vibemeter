@@ -505,16 +505,40 @@ curl http://13.63.7.88/health
 # Expected: {"status":"ok"}
 ```
 
-Watch live API logs as you use the app:
+---
+
+## Live Log Tailing via SSM
+
+Always use an interactive SSM session for tailing logs — it streams in real time.
 
 ```bash
-aws ssm send-command \
-  --region eu-north-1 \
-  --instance-ids YOUR_INSTANCE_ID \
-  --document-name "AWS-RunShellScript" \
-  --parameters 'commands=["sudo docker logs vibemeter-api-1 --tail 30 2>&1"]' \
-  --query "Command.CommandId" --output text
+aws ssm start-session --target YOUR_INSTANCE_ID --region eu-north-1
 ```
+
+Once inside the session:
+
+```bash
+# Tail Nginx access log (shows every HTTP request hitting the server)
+sudo tail -f /var/log/nginx/access.log
+
+# Tail API container logs (shows Go handler output, DB errors, GIN request log)
+sudo docker logs vibemeter-api-1 -f --tail 20
+
+# Tail both at once in separate panes, or run one then Ctrl+C and switch
+```
+
+**Reading Nginx logs:**
+- Your iPhone's IP will appear on every request the app makes
+- Status `200` = success, `404` = route not found, `500` = API error, `502` = API container down
+- If your iPhone IP never appears → the app is not reaching EC2 (ATS/network issue)
+
+**Reading API logs:**
+- `[GIN] 200 | GET /v1/places/nearby` = successful venue fetch
+- `[GIN] 500 | ...` = check the line above it for the DB/Redis error message
+- `Connected to Redis` / `Connected to DB` on startup = services are healthy
+
+**Find your iPhone's IP:**
+Open Safari on iPhone → go to `http://13.63.7.88/health` → then check Nginx log for the most recent entry — that IP is your phone.
 
 You should see `[GIN] 200 | GET /v1/places/nearby` as the home screen loads.
 
@@ -591,3 +615,24 @@ sudo docker compose -f docker-compose.prod.yml up -d --no-deps api
 **502 Bad Gateway from Nginx**
 → Nginx is up but the API container is not. Check: `sudo docker compose -f docker-compose.prod.yml ps`
 → If API shows "Restarting", check logs: `sudo docker logs vibemeter-api-1 --tail 30`
+
+**App shows "Network request failed" but Safari can reach the server**
+→ iOS App Transport Security (ATS) is blocking HTTP. Confirm `Info.plist` has `NSAllowsArbitraryLoads: true`
+→ Check: `grep -A3 NSAppTransportSecurity mobile/ios/VibeMeter/Info.plist`
+→ If it shows `<false/>`, edit it to `<true/>` and rebuild with `npx expo run:ios --device --configuration Release`
+→ Delete the old app from iPhone before installing the new build to avoid running a cached version
+
+**No requests appear in Nginx log when app loads**
+→ App is not reaching EC2 at all — likely ATS blocking HTTP or wrong URL baked into build
+→ Verify `mobile/src/config.ts` returns `http://13.63.7.88` and rebuild
+→ Open Safari on iPhone → `http://13.63.7.88/health` — if this works, network is fine and the issue is in the app build
+
+**RDS schema missing / 500 on `/v1/places/nearby`**
+→ DB migrations were never applied. Run from EC2 SSM session:
+```bash
+PGPASSWORD=YOUR_RDS_PASSWORD psql -h YOUR_RDS_ENDPOINT -U vibemeter -d vibemeter -f ~/vibemeter/infra/postgres/init.sql
+```
+→ Then seed venues (CSV must be present on EC2 — commit with `git add -f` if gitignored):
+```bash
+PGPASSWORD=YOUR_RDS_PASSWORD psql -h YOUR_RDS_ENDPOINT -U vibemeter -d vibemeter -f /tmp/seed.sql
+```
