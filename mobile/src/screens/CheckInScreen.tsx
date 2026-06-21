@@ -17,6 +17,7 @@ import { useAudioRecorder, AudioModule, IOSOutputFormat, AudioQuality, setAudioM
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { submitVibe, analyseAudio, AudioSignals } from "../api/vibe";
 import { useLocation } from "../hooks/useLocation";
+import { useVibeStore } from "../store/useVibeStore";
 import { RootStackParamList } from "../../App";
 import { C, vibeColor, vibeGradient, withAlpha } from "../theme";
 
@@ -53,6 +54,7 @@ const VIBE_TAGS: { id: string; label: string }[] = [
 export function CheckInScreen({ route, navigation }: Props) {
   const { placeId, name } = route.params;
   const { coords } = useLocation();
+  const { venues, updateVenueScore } = useVibeStore();
   const [mode, setMode] = useState<Mode>("listen");
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [countdown, setCountdown] = useState(RECORD_SECONDS);
@@ -197,6 +199,8 @@ export function CheckInScreen({ route, navigation }: Props) {
       }
       const resp = await submitVibe(payload);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const existing = venues.find((v) => v.place_id === placeId);
+      updateVenueScore(placeId, resp.venue_score, resp.confidence, (existing?.check_in_count ?? 0) + 1);
       setResult({ score: resp.venue_score, badge: resp.badge_earned });
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

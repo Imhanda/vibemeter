@@ -23,7 +23,7 @@ import { C } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "VenueList">;
 
-const TYPE_FILTERS = ["all", "bar", "club"] as const;
+const TYPE_FILTERS = ["all", "bar", "club", "restaurant"] as const;
 type TypeFilter = (typeof TYPE_FILTERS)[number];
 
 const VIBE_TAGS: { id: string; label: string }[] = [
