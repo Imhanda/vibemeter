@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"vibemeter/cache"
 	"vibemeter/db"
 	"vibemeter/models"
@@ -106,7 +107,7 @@ func GetNearbyPlaces(c *gin.Context) {
 		        SELECT 1 FROM vibe_contributions vc
 		        WHERE vc.place_id = p.id
 		          AND vc.tags && $5::text[]
-		          AND vc.created_at > NOW() - INTERVAL '3 hours'
+		          AND vc.created_at > NOW() - INTERVAL '7 days'
 		          AND NOT vc.flagged
 		      ))
 		ORDER BY distance_m
@@ -118,14 +119,19 @@ func GetNearbyPlaces(c *gin.Context) {
 		return
 	}
 
-	// If the area has fewer than 5 places total, seed from OpenStreetMap on demand.
-	// Check total (unfiltered) so a type/tag filter doesn't cause repeated Overpass calls.
+	// Re-seed from OpenStreetMap when the area looks thin or data is stale.
+	// Check unfiltered totals so type/tag filters don't cause repeated Overpass calls.
 	var totalInArea int
 	_ = db.DB.Get(&totalInArea,
 		`SELECT COUNT(*) FROM places
 		 WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, $3)`,
 		lat, lng, radius)
-	if totalInArea < 5 {
+	var lastSync time.Time
+	_ = db.DB.Get(&lastSync,
+		`SELECT COALESCE(MAX(places_synced_at), '2000-01-01') FROM places
+		 WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, $3)`,
+		lat, lng, radius)
+	if totalInArea < 20 || time.Since(lastSync) > 24*time.Hour {
 		seedFromOverpass(lat, lng, radius)
 		if err := db.DB.Select(&rows, q, lat, lng, radius, venueType, tagFilter, limit); err != nil {
 			log.Printf("places: re-query after overpass seed: %v", err)

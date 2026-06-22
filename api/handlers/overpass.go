@@ -10,26 +10,33 @@ import (
 	"vibemeter/db"
 )
 
+type osmCenter struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
 type osmElement struct {
-	Type string            `json:"type"`
-	ID   int64             `json:"id"`
-	Lat  float64           `json:"lat"`
-	Lon  float64           `json:"lon"`
-	Tags map[string]string `json:"tags"`
+	Type   string            `json:"type"`
+	ID     int64             `json:"id"`
+	Lat    float64           `json:"lat"`
+	Lon    float64           `json:"lon"`
+	Center osmCenter         `json:"center"`
+	Tags   map[string]string `json:"tags"`
 }
 
 type overpassResp struct {
 	Elements []osmElement `json:"elements"`
 }
 
-var overpassClient = &http.Client{Timeout: 15 * time.Second}
+var overpassClient = &http.Client{Timeout: 20 * time.Second}
 
 // seedFromOverpass queries OpenStreetMap for nightlife/dining venues near a
-// location and upserts them into the places table. Called synchronously when
-// the DB has fewer than 5 venues in the requested area.
+// location and upserts them into the places table.
 func seedFromOverpass(lat, lng, radius float64) {
+	// nwr = node/way/relation so building-footprint venues (ways) are included.
+	// out center returns a center point for ways/relations instead of no coords.
 	query := fmt.Sprintf(
-		`[out:json][timeout:10];node[amenity~"^(bar|pub|nightclub|restaurant|cafe)$"](around:%.0f,%.6f,%.6f);out;`,
+		`[out:json][timeout:15];nwr[amenity~"^(bar|pub|nightclub|restaurant|cafe|fast_food|food_court|biergarten)$"](around:%.0f,%.6f,%.6f);out center;`,
 		radius, lat, lng,
 	)
 	resp, err := overpassClient.Get("https://overpass-api.de/api/interpreter?data=" + url.QueryEscape(query))
@@ -51,12 +58,20 @@ func seedFromOverpass(lat, lng, radius float64) {
 		if name == "" {
 			continue
 		}
+		// nodes have lat/lon at top level; ways/relations use center coords
+		elLat, elLon := el.Lat, el.Lon
+		if elLat == 0 && elLon == 0 {
+			elLat, elLon = el.Center.Lat, el.Center.Lon
+		}
+		if elLat == 0 && elLon == 0 {
+			continue
+		}
 		placeID := fmt.Sprintf("osm_%s_%d", el.Type, el.ID)
 		_, err := db.DB.Exec(`
 			INSERT INTO places (id, name, lat, lng, type, address, photo_url, location, places_synced_at)
 			VALUES ($1, $2, $3, $4, $5, $6, '', ST_SetSRID(ST_MakePoint($4, $3), 4326), NOW())
 			ON CONFLICT (id) DO UPDATE SET places_synced_at = NOW()
-		`, placeID, name, el.Lat, el.Lon, osmTypeToVenue(el.Tags["amenity"]), el.Tags["addr:street"])
+		`, placeID, name, elLat, elLon, osmTypeToVenue(el.Tags["amenity"]), el.Tags["addr:street"])
 		if err != nil {
 			log.Printf("overpass: upsert %s: %v", placeID, err)
 			continue
@@ -70,8 +85,10 @@ func osmTypeToVenue(amenity string) string {
 	switch amenity {
 	case "nightclub":
 		return "club"
-	case "restaurant", "cafe":
+	case "restaurant", "cafe", "fast_food", "food_court":
 		return "restaurant"
+	case "bar", "pub", "biergarten":
+		return "bar"
 	default:
 		return "bar"
 	}
