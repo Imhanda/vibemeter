@@ -273,11 +273,12 @@ export function CheckInScreen({ route, navigation }: Props) {
       <Text style={styles.venueName}>{name}</Text>
 
       {/* ── Mode selector ── */}
+      <Text style={styles.modeRowLabel}>HOW DO YOU WANT TO CHECK IN?</Text>
       <View style={styles.modeRow}>
         {(["listen", "manual"] as Mode[]).map((m) => {
           const active = mode === m;
           const icon  = m === "listen" ? "🎤" : "⭐";
-          const label = m === "listen" ? "LISTEN" : "RATE";
+          const label = m === "listen" ? "AUTO" : "RATE";
           const sub   = m === "listen" ? "Auto-detect" : "Quick vote";
           return (
             <TouchableOpacity
@@ -477,6 +478,7 @@ const styles = StyleSheet.create({
   },
   venueName: { color: C.textPrimary, fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 20 },
 
+  modeRowLabel: { color: C.textMuted, fontSize: 12, fontWeight: "600", letterSpacing: 0.5, marginBottom: 8, width: "100%" },
   modeRow: { flexDirection: "row", gap: 10, width: "100%", marginBottom: 24 },
   modeCard: {
     flex: 1, borderRadius: 16, overflow: "hidden",
