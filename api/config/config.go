@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -20,6 +21,8 @@ type Config struct {
 	SkipAuth           bool
 	SkipGeoFence       bool
 	Port               string
+	TrustAgentEnforce  bool
+	AdminUserIDs       map[string]bool
 }
 
 var C Config
@@ -40,7 +43,21 @@ func Load() {
 		SkipAuth:           getEnv("SKIP_AUTH", "false") == "true",
 		SkipGeoFence:       getEnv("SKIP_GEO_FENCE", "false") == "true",
 		Port:               getEnv("PORT", "8080"),
+		TrustAgentEnforce:  getEnv("TRUST_AGENT_ENFORCE", "false") == "true",
+		AdminUserIDs:       parseIDSet(getEnv("ADMIN_USER_IDS", "")),
 	}
+}
+
+// parseIDSet turns a comma-separated env value into a lookup set.
+func parseIDSet(csv string) map[string]bool {
+	set := make(map[string]bool)
+	for _, id := range strings.Split(csv, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			set[id] = true
+		}
+	}
+	return set
 }
 
 func getEnv(key, defaultVal string) string {

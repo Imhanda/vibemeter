@@ -50,10 +50,12 @@ func main() {
 	// WebSocket — auth handled inside handler via query param token
 	r.GET("/v1/ws", middleware.WSAuthMiddleware(), handlers.WSHandler)
 
-	// Admin — one-time or manual pull from Google Places API
-	admin := r.Group("/v1/admin", middleware.AuthMiddleware())
+	// Admin — restricted to ADMIN_USER_IDS
+	admin := r.Group("/v1/admin", middleware.AuthMiddleware(), middleware.AdminOnly())
 	{
 		admin.POST("/places/sync", handlers.SyncPlaces)
+		admin.GET("/trust/events", handlers.GetTrustEvents)
+		admin.POST("/trust/users/:user_id/override", handlers.OverrideTrustScore)
 	}
 
 	log.Printf("VibeMeter API starting on :%s\n", config.C.Port)

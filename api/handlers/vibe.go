@@ -14,6 +14,7 @@ import (
 	"vibemeter/models"
 	"vibemeter/notifications"
 	"vibemeter/scoring"
+	"vibemeter/trust"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
@@ -33,7 +34,7 @@ type venueDetailResponse struct {
 	Confidence      *float64                  `json:"confidence"`
 	CheckInCount    int                       `json:"check_in_count"`
 	ActiveTags      []string                  `json:"active_tags"`
-	SignalBreakdown *models.SignalBreakdown    `json:"signal_breakdown,omitempty"`
+	SignalBreakdown *models.SignalBreakdown   `json:"signal_breakdown,omitempty"`
 	History         []models.VibeHistoryEntry `json:"history"`
 }
 
@@ -234,6 +235,22 @@ func SubmitVibe(c *gin.Context) {
 			}
 		}
 	}(req.PlaceID, venueScore)
+
+	// --- Trust & Anti-Spam evaluation (async, never blocks the response) ---
+	// Gated on !SkipAuth so local dev loops against the shared "dev-user"
+	// account never corrupt a real trust score.
+	if !config.C.SkipAuth {
+		go func(trig trust.EvalTrigger) {
+			ctx2, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			trust.Evaluate(ctx2, trig)
+		}(trust.EvalTrigger{
+			UserID:         userID,
+			ContributionID: contribID,
+			PlaceID:        req.PlaceID,
+			Flagged:        isOutlier,
+		})
+	}
 
 	// --- Badge check: first check-in at this venue ---
 	var badgeEarned *string

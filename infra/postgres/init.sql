@@ -74,6 +74,21 @@ CREATE TABLE vibe_contributions_2026_05
 PARTITION OF vibe_contributions
 FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
 
+-- June 2026
+CREATE TABLE vibe_contributions_2026_06
+PARTITION OF vibe_contributions
+FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+
+-- July 2026
+CREATE TABLE vibe_contributions_2026_07
+PARTITION OF vibe_contributions
+FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
+
+-- August 2026
+CREATE TABLE vibe_contributions_2026_08
+PARTITION OF vibe_contributions
+FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+
 -- Default partition (safety)
 CREATE TABLE vibe_contributions_default
 PARTITION OF vibe_contributions DEFAULT;
@@ -84,6 +99,15 @@ ON vibe_contributions_2026_04(place_id, created_at DESC);
 
 CREATE INDEX idx_vibe_place_time_2026_05
 ON vibe_contributions_2026_05(place_id, created_at DESC);
+
+CREATE INDEX idx_vibe_place_time_2026_06
+ON vibe_contributions_2026_06(place_id, created_at DESC);
+
+CREATE INDEX idx_vibe_place_time_2026_07
+ON vibe_contributions_2026_07(place_id, created_at DESC);
+
+CREATE INDEX idx_vibe_place_time_2026_08
+ON vibe_contributions_2026_08(place_id, created_at DESC);
 
 -- =========================
 -- BADGES
@@ -116,6 +140,26 @@ CREATE TABLE push_tokens (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   PRIMARY KEY (user_id, token)
 );
+
+-- =========================
+-- TRUST EVENTS (anti-spam agent audit log)
+-- =========================
+CREATE TABLE trust_events (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         VARCHAR(128) REFERENCES users(id),
+  contribution_id UUID,
+  place_id        VARCHAR(255),
+  rule_hits       TEXT[] NOT NULL DEFAULT '{}',
+  verdict         TEXT NOT NULL CHECK (verdict IN ('clean','suspicious','abusive','manual_override')),
+  delta           FLOAT NOT NULL,
+  old_score       FLOAT NOT NULL,
+  new_score       FLOAT NOT NULL,
+  enforced        BOOLEAN NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_trust_events_user_time ON trust_events(user_id, created_at DESC);
+CREATE INDEX idx_trust_events_contribution ON trust_events(contribution_id);
 
 -- =========================
 -- SEED DATA (from places_seed.csv — 61 Bengaluru nightlife venues)
