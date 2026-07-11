@@ -5,8 +5,13 @@
       "Bash(npm list:*)",
       "Bash(npm install:*)",
       "Bash(aws ssm *)",
-      "Bash(grep -i \"NSApp\\\\|arbitrary\\\\|transport\" \"/Users/vipinhanda/Library/Developer/Xcode/DerivedData/VibeMeter-bzmmwzcdinvuvocyqpqjvydyolxw/Build/Products/Release-iphoneos/VibeMeter.app/Info.plist\")",
-      "Read(//Users/vipinhanda/Library/Developer/Xcode/DerivedData/VibeMeter-bzmmwzcdinvuvocyqpqjvydyolxw/Build/Products/Release-iphoneos/VibeMeter.app/**)"
+      "Bash(aws ec2 *)",
+      "Bash(aws iam *)",
+      "Bash(openssl s_client -servername token.actions.githubusercontent.com -showcerts -connect token.actions.githubusercontent.com:443)",
+      "Bash(openssl x509 *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import yaml\")",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
