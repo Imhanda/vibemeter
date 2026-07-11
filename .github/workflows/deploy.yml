@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'api/**'
-      - 'infra/postgres/**'
+      - 'infra/postgres/migrations/**'
   workflow_dispatch:
     inputs:
       sha:
