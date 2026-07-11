@@ -31,14 +31,14 @@ func contrib(rawScore float64, ageMin float64, trustWeight float64, flagged bool
 // ── ComputeRawScore ───────────────────────────────────────────────────────────
 
 func TestComputeRawScore_AudioSignals(t *testing.T) {
-	// (0.40×0.8 + 0.35×0.7 + 0.25×0.6) × 100 = (0.32 + 0.245 + 0.15) × 100 = 71.5
+	// (0.55×0.8 + 0.40×0.7 + 0.05×0.6) × 100 = (0.44 + 0.28 + 0.03) × 100 = 75.0
 	req := &models.SubmitVibeRequest{
 		CrowdEnergy: ptr(0.8),
 		MusicEnergy: ptr(0.7),
 		AmbientDB:   ptr(0.6),
 	}
 	got := scoring.ComputeRawScore(req)
-	approx(t, got, 71.5, 0.01, "audio score")
+	approx(t, got, 75.0, 0.01, "audio score")
 }
 
 func TestComputeRawScore_AllZeroSignals(t *testing.T) {
@@ -80,11 +80,11 @@ func TestComputeRawScore_ClampsBelow0(t *testing.T) {
 
 func TestComputeRawScore_NilSignalsDefaultToZero(t *testing.T) {
 	// Only crowd_energy provided; music and ambient default to 0
-	// 0.40×0.5 × 100 = 20.0
+	// 0.55×0.5 × 100 = 27.5
 	req := &models.SubmitVibeRequest{
 		CrowdEnergy: ptr(0.5),
 	}
-	approx(t, scoring.ComputeRawScore(req), 20.0, 0.01, "partial signals")
+	approx(t, scoring.ComputeRawScore(req), 27.5, 0.01, "partial signals")
 }
 
 func TestComputeRawScore_ManualRating(t *testing.T) {
@@ -110,12 +110,12 @@ func TestComputeRawScore_ManualRatingIgnoredWhenSignalsPresent(t *testing.T) {
 		CrowdEnergy:  ptr(0.5),
 		ManualRating: &rating,
 	}
-	// Treated as audio (crowd only): 0.40×0.5 × 100 = 20
+	// Treated as audio (crowd only): 0.55×0.5 × 100 = 27.5
 	got := scoring.ComputeRawScore(req)
 	if got == 70.0 {
 		t.Errorf("manual rating should be ignored when audio signals are present")
 	}
-	approx(t, got, 20.0, 0.01, "audio wins over manual")
+	approx(t, got, 27.5, 0.01, "audio wins over manual")
 }
 
 // ── AggregateWithDecay ────────────────────────────────────────────────────────

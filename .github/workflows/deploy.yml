@@ -1,0 +1,190 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'infra/postgres/**'
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Existing image SHA tag to redeploy (rollback). Leave blank to build+deploy current main.'
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+            migrations:
+              - 'infra/postgres/migrations/**'
+
+  test:
+    needs: changes
+    # Runs on a normal push that touches api/**, or a manual "build+deploy
+    # current main" dispatch (blank sha input). A dispatch WITH a sha input
+    # is a rollback — it skips test/build entirely, see the deploy job.
+    if: (github.event_name == 'push' && needs.changes.outputs.api == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.sha == '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+      - name: go vet
+        working-directory: api
+        run: go vet ./...
+      - name: go build
+        working-directory: api
+        run: go build ./...
+      - name: go test
+        working-directory: api
+        run: go test ./...
+
+  migration-lint:
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vibemeter
+          POSTGRES_PASSWORD: vibemeter
+          POSTGRES_DB: vibemeter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replay migrations against a throwaway Postgres (never touches RDS)
+        env:
+          PGPASSWORD: vibemeter
+        run: |
+          set -euo pipefail
+          for f in infra/postgres/migrations/*.sql; do
+            echo "::group::$f"
+            psql -h localhost -U vibemeter -d vibemeter -v ON_ERROR_STOP=1 -f "$f"
+            echo "::endgroup::"
+          done
+      - name: Reminder
+        run: echo "Migration files changed in this push — remember to apply them manually on RDS via SSM (see AWS_DEPLOY.md)." >> "$GITHUB_STEP_SUMMARY"
+
+  build-and-push:
+    needs: test
+    # No explicit "if" needed: a job automatically skips when its "needs" job
+    # was skipped (rollback dispatch skips test, which skips this too).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/vibemeter-api:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/vibemeter-api:${{ github.sha }}
+
+  deploy:
+    needs: [build-and-push]
+    if: always() && (needs.build-and-push.result == 'success' || (github.event_name == 'workflow_dispatch' && github.event.inputs.sha != ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Deploy via SSM
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.sha || github.sha }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          IMAGE="${DOCKERHUB_USERNAME}/vibemeter-api:${IMAGE_TAG}"
+          echo "Deploying image: $IMAGE"
+
+          # Build the remote script as a real file, then wrap it as JSON with
+          # jq (not hand-escaped string concatenation) — a single "commands"
+          # array element is allowed to contain embedded newlines; SSM runs
+          # it as one script. This avoids nesting bash/JSON/sed escaping
+          # three levels deep, which is exactly the kind of thing that's
+          # fragile to hand-write correctly.
+          cat > /tmp/remote-deploy.sh <<EOF
+          set -euo pipefail
+          cd /home/ssm-user/vibemeter
+          git pull origin main
+          docker pull ${IMAGE}
+          sed -i -E '/vibemeter-api:/s#image: .*#image: ${IMAGE}#' docker-compose.prod.yml
+          docker compose -f docker-compose.prod.yml up -d --no-deps api
+          sleep 5
+          curl -sf http://localhost:8080/health
+          EOF
+
+          PARAMS=$(jq -n --rawfile script /tmp/remote-deploy.sh '{commands: [$script]}')
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "vibemeter-api deploy ${IMAGE_TAG}" \
+            --parameters "$PARAMS" \
+            --query "Command.CommandId" --output text)
+
+          echo "SSM CommandId: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --region "$REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" || true
+
+          STATUS=$(aws ssm get-command-invocation \
+            --region "$REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "Status" --output text)
+
+          echo "--- remote stdout ---"
+          aws ssm get-command-invocation \
+            --region "$REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "StandardOutputContent" --output text
+
+          echo "--- remote stderr ---"
+          aws ssm get-command-invocation \
+            --region "$REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "StandardErrorContent" --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::SSM deploy finished with status=$STATUS"
+            exit 1
+          fi
