@@ -60,8 +60,11 @@ jobs:
     if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     services:
+      # postgis/postgis, not plain postgres — init.sql's `places` table uses
+      # the PostGIS GEOMETRY type, and migrations run on top of that schema.
+      # Same image the local dev docker-compose.yml uses, for fidelity.
       postgres:
-        image: postgres:16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: vibemeter
           POSTGRES_PASSWORD: vibemeter
@@ -75,6 +78,17 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - name: Apply base schema (DDL only — migrations are patches on top of it, not a full bootstrap)
+        env:
+          PGPASSWORD: vibemeter
+        run: |
+          set -euo pipefail
+          # init.sql's tail seeds venues via a server-side COPY from a path
+          # that only exists via the local dev compose file's volume mount —
+          # irrelevant here, migration-lint only needs the schema, so stop
+          # at the "SEED DATA" marker.
+          awk '/^-- SEED DATA/{exit} {print}' infra/postgres/init.sql > /tmp/schema-only.sql
+          psql -h localhost -U vibemeter -d vibemeter -v ON_ERROR_STOP=1 -f /tmp/schema-only.sql
       - name: Replay migrations against a throwaway Postgres (never touches RDS)
         env:
           PGPASSWORD: vibemeter
