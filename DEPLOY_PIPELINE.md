@@ -51,11 +51,26 @@ changes ──┬──> test ──> build-and-push ──> deploy
    already-tested, already-built image, so there's nothing new to test.
 
 3. **`migration-lint`** — only runs when `infra/postgres/migrations/**`
-   changed. Spins up a throwaway `postgres:16` container *inside the CI
-   runner* (never touches the real database) and replays every migration
-   file against it with `ON_ERROR_STOP=1`, to catch broken SQL before it's
-   merged. It does **not** apply anything to the real RDS database — see
-   [Migrations](#migrations-are-not-auto-applied) below.
+   changed. Spins up a throwaway `postgis/postgis:16-3.4` container *inside
+   the CI runner* (never touches the real database), loads `init.sql`'s base
+   schema (DDL only, stopping before the seed-data section), then replays
+   every migration file on top of it with `ON_ERROR_STOP=1` — mirroring how
+   migrations actually get applied against RDS (as patches on an existing
+   schema, not a standalone bootstrap). It does **not** apply anything to
+   the real RDS database — see [Migrations](#migrations-are-not-auto-applied)
+   below.
+
+   It also asks Claude (Haiku) to review each **changed** migration file
+   (only the files this push actually touched, not the whole directory) for
+   risky patterns — `DROP TABLE`/`DROP COLUMN`, `TRUNCATE`, a `NOT NULL`
+   added without a default on a populated table, a missing
+   `IF NOT EXISTS`/`IF EXISTS` guard, or anything non-idempotent (this
+   project's migrations are meant to be safely re-runnable). This is
+   **advisory only** — findings are posted to the job's step summary with a
+   🟢/🟡/🔴 risk marker, and the step can never fail the build, even if the
+   Anthropic API errors or `ANTHROPIC_API_KEY` isn't configured (it just
+   notes that it skipped). It's a second opinion to read before you
+   manually apply a migration over SSM, not a gate.
 
 4. **`build-and-push`** — builds `api/Dockerfile` for `linux/amd64` (the
    architecture EC2 runs; GitHub's runners are natively `amd64` too, so this
@@ -183,9 +198,10 @@ psql -h YOUR_RDS_ENDPOINT -U vibemeter -d vibemeter -f infra/postgres/migrations
 | Variable | `AWS_REGION` | `eu-north-1` |
 | Variable | `EC2_INSTANCE_ID` | `i-098ccd472a6d017e5` |
 | Variable | `AWS_ROLE_ARN` | `arn:aws:iam::528235769463:role/vibemeter-ci-deploy-role` |
+| Secret | `ANTHROPIC_API_KEY` | Optional — same key the backend uses (`config.C.AnthropicAPIKey`). Only needed for the `migration-lint` job's Claude risk review; everything else works without it. If unset, that one step just notes it skipped — nothing fails. |
 
-Until these are set, `test` and `build-and-push` succeed but `deploy` fails
-(expected) — re-run the failed job once they're in place.
+Until the first five are set, `test` and `build-and-push` succeed but `deploy`
+fails (expected) — re-run the failed job once they're in place.
 
 ---
 

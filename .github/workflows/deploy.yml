@@ -22,11 +22,13 @@ jobs:
     outputs:
       api: ${{ steps.filter.outputs.api }}
       migrations: ${{ steps.filter.outputs.migrations }}
+      migrations_files: ${{ steps.filter.outputs.migrations_files }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          list-files: shell
           filters: |
             api:
               - 'api/**'
@@ -99,6 +101,57 @@ jobs:
             psql -h localhost -U vibemeter -d vibemeter -v ON_ERROR_STOP=1 -f "$f"
             echo "::endgroup::"
           done
+      - name: Review migration risk with Claude (advisory only, never fails the build)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CHANGED_FILES: ${{ needs.changes.outputs.migrations_files }}
+        run: |
+          set +e  # this step must never fail the job — see the "warn only" note below
+
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "### Migration risk review" >> "$GITHUB_STEP_SUMMARY"
+            echo "Skipped — ANTHROPIC_API_KEY secret is not set." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "### Migration risk review" >> "$GITHUB_STEP_SUMMARY"
+          echo "Advisory only — this never blocks the build. Review findings before applying a migration manually over SSM." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          for f in $CHANGED_FILES; do
+            [ -f "$f" ] || continue  # skip deleted files
+
+            PROMPT=$(jq -n --arg name "$f" --rawfile content "$f" '
+              "You are reviewing a Postgres migration file for a production database with no staging environment. Identify risky or destructive patterns: DROP TABLE/COLUMN, TRUNCATE, ALTER COLUMN ... NOT NULL without a default on a populated table, missing IF NOT EXISTS/IF EXISTS guards, renaming a table/column the application still references, or any non-idempotent statement (this project'"'"'s convention is that every migration must be safely re-runnable). Reply with ONLY a JSON object, no markdown, no explanation: {\"risk\": \"safe|caution|dangerous\", \"reasoning\": \"one or two sentences\"}\n\nMigration file (" + $name + "):\n" + $content
+            ')
+
+            RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+              -H "x-api-key: $ANTHROPIC_API_KEY" \
+              -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d "$(jq -n --arg prompt "$PROMPT" '{model: "claude-haiku-4-5", max_tokens: 300, messages: [{role: "user", content: $prompt}]}')")
+
+            TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text // empty' 2>/dev/null)
+            # Strip markdown fences in case Claude adds them despite instructions
+            TEXT=$(echo "$TEXT" | sed -e 's/^```json//' -e 's/^```//' -e 's/```$//')
+
+            RISK=$(echo "$TEXT" | jq -r '.risk // empty' 2>/dev/null)
+            REASONING=$(echo "$TEXT" | jq -r '.reasoning // empty' 2>/dev/null)
+
+            if [ -z "$RISK" ]; then
+              echo "- **$f**: could not review (API error or unparseable response)" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            case "$RISK" in
+              dangerous) ICON="🔴" ;;
+              caution)   ICON="🟡" ;;
+              *)         ICON="🟢" ;;
+            esac
+            echo "- $ICON **$f** — $RISK: $REASONING" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          exit 0
       - name: Reminder
         run: echo "Migration files changed in this push — remember to apply them manually on RDS via SSM (see AWS_DEPLOY.md)." >> "$GITHUB_STEP_SUMMARY"
 
