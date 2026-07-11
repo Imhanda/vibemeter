@@ -602,6 +602,12 @@ You should see `[GIN] 200 | GET /v1/places/nearby` as the home screen loads.
 
 ## Updating the App (Future Deploys)
 
+> **This is now automated for API changes** — pushing to `main` with changes
+> under `api/**` triggers `.github/workflows/deploy.yml`, which does
+> everything below for you. See `DEPLOY_PIPELINE.md` for how it works and
+> its rollback procedure. The manual steps here are still accurate and
+> useful as a fallback if the pipeline itself is broken, or for debugging.
+
 When you push new API code to GitHub:
 
 **On your Mac:**

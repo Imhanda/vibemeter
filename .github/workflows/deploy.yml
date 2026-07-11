@@ -139,7 +139,9 @@ jobs:
           cat > /tmp/remote-deploy.sh <<EOF
           set -euo pipefail
           cd /home/ssm-user/vibemeter
-          git pull origin main
+          grep -q '/home/ssm-user/vibemeter' /etc/gitconfig 2>/dev/null || git config --system --add safe.directory /home/ssm-user/vibemeter
+          git fetch origin main
+          git reset --hard origin/main
           docker pull ${IMAGE}
           sed -i -E '/vibemeter-api:/s#image: .*#image: ${IMAGE}#' docker-compose.prod.yml
           docker compose -f docker-compose.prod.yml up -d --no-deps api
