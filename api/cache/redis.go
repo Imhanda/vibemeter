@@ -23,8 +23,6 @@ type VenueScore struct {
 	AmbientDB    float64   `json:"ambient_db"`
 }
 
-const venueScoreTTL = 3 * time.Hour
-
 func InitRedis() {
 	opt, err := redis.ParseURL(config.C.RedisURL)
 	if err != nil {
@@ -43,7 +41,7 @@ func SetVenueScore(ctx context.Context, placeID string, vs VenueScore) error {
 	if err != nil {
 		return err
 	}
-	return RDB.Set(ctx, key, data, venueScoreTTL).Err()
+	return RDB.Set(ctx, key, data, 0).Err() // no expiration — check-ins persist on the dashboard
 }
 
 func GetVenueScore(ctx context.Context, placeID string) (*VenueScore, error) {
