@@ -13,6 +13,11 @@ const (
 	ManualWeight      = 0.70
 	DecayLambda       = 0.0077 // at 90 min → weight ≈ 0.50; at 180 min → weight ≈ 0.25
 	OutlierThreshold  = 40.0
+
+	// CheckinGraduationThreshold is the number of all-time, non-flagged
+	// check-ins a venue needs before its score is driven purely by
+	// check-ins rather than a Google-rating fallback. See BlendWithGoogleRating.
+	CheckinGraduationThreshold = 20
 )
 
 // ComputeRawScore returns a 0–100 score for a single check-in.
@@ -94,6 +99,27 @@ func Haversine(lat1, lng1, lat2, lng2 float64) float64 {
 	Δλ := (lng2 - lng1) * math.Pi / 180
 	a := math.Sin(Δφ/2)*math.Sin(Δφ/2) + math.Cos(φ1)*math.Cos(φ2)*math.Sin(Δλ/2)*math.Sin(Δλ/2)
 	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+}
+
+// BlendWithGoogleRating blends a check-in-derived venue score with a Google
+// rating fallback, shifting weight toward the check-in score as a venue
+// accumulates check-in history. totalCheckins is the all-time count of
+// non-flagged contributions at the venue, not the recent aggregation
+// window — a venue that graduates stays check-in-driven even through a
+// quiet period, it doesn't drift back toward the Google rating.
+func BlendWithGoogleRating(checkinScore float64, totalCheckins int, googleRating float64) (score float64, source string) {
+	if googleRating <= 0 {
+		return checkinScore, "checkin" // no google data — nothing to blend
+	}
+	googleScore := googleRating * 20 // 1–5 stars -> 0–100, same scale as raw_score
+	if totalCheckins <= 0 {
+		return googleScore, "google"
+	}
+	w := math.Min(float64(totalCheckins)/CheckinGraduationThreshold, 1.0)
+	if w >= 1.0 {
+		return checkinScore, "checkin"
+	}
+	return w*checkinScore + (1-w)*googleScore, "blended"
 }
 
 func clamp(v float64) float64 {

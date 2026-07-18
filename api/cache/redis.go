@@ -21,6 +21,10 @@ type VenueScore struct {
 	CrowdEnergy  float64   `json:"crowd_energy"`
 	MusicEnergy  float64   `json:"music_energy"`
 	AmbientDB    float64   `json:"ambient_db"`
+	// Source is "checkin", "google", or "blended" — see
+	// scoring.BlendWithGoogleRating. Empty for cache entries written before
+	// this field existed; treat as "checkin".
+	Source string `json:"score_source,omitempty"`
 }
 
 func InitRedis() {
@@ -58,6 +62,22 @@ func GetVenueScore(ctx context.Context, placeID string) (*VenueScore, error) {
 		return nil, err
 	}
 	return &vs, nil
+}
+
+// GetVenueScoreOrFallback returns the cached score if one exists, otherwise
+// synthesizes one from the venue's Google rating (source="google"). Returns
+// nil only when there's neither a cached score nor a Google rating —
+// callers get the same cold-start-with-no-data behavior as before this
+// existed.
+func GetVenueScoreOrFallback(ctx context.Context, placeID string, googleRating *float64) (*VenueScore, error) {
+	vs, err := GetVenueScore(ctx, placeID)
+	if err != nil || vs != nil {
+		return vs, err
+	}
+	if googleRating == nil || *googleRating <= 0 {
+		return nil, nil
+	}
+	return &VenueScore{Score: *googleRating * 20, Source: "google"}, nil
 }
 
 // IncrRateLimit increments the per-user-per-venue rate limit counter.

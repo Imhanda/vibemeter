@@ -30,9 +30,11 @@ type placesAPIResult struct {
 			Lng float64 `json:"lng"`
 		} `json:"location"`
 	} `json:"geometry"`
-	Types    []string `json:"types"`
-	Vicinity string   `json:"vicinity"`
-	Photos   []struct {
+	Types            []string `json:"types"`
+	Vicinity         string   `json:"vicinity"`
+	Rating           float64  `json:"rating"` // 0 if Google omits it (no ratings yet)
+	UserRatingsTotal int      `json:"user_ratings_total"`
+	Photos           []struct {
 		PhotoReference string `json:"photo_reference"`
 	} `json:"photos"`
 }
@@ -97,22 +99,25 @@ func fetchNearbyPage(lat, lng float64, radius int, placeType, pageToken, apiKey 
 // upsertPlace inserts or updates a single place in the DB.
 func upsertPlace(p placesAPIResult, vType, photo string) error {
 	_, err := db.DB.Exec(`
-		INSERT INTO places (id, name, lat, lng, location, type, address, photo_url, places_synced_at)
+		INSERT INTO places (id, name, lat, lng, location, type, address, photo_url,
+		                     google_rating, google_rating_count, places_synced_at)
 		VALUES ($1, $2, $3, $4,
 		        ST_SetSRID(ST_MakePoint($4, $3), 4326),
-		        $5, $6, $7, NOW())
+		        $5, $6, $7, NULLIF($8, 0), $9, NOW())
 		ON CONFLICT (id) DO UPDATE
-		SET name             = EXCLUDED.name,
-		    lat              = EXCLUDED.lat,
-		    lng              = EXCLUDED.lng,
-		    location         = EXCLUDED.location,
-		    type             = EXCLUDED.type,
-		    address          = EXCLUDED.address,
-		    photo_url        = EXCLUDED.photo_url,
-		    places_synced_at = NOW()`,
+		SET name                = EXCLUDED.name,
+		    lat                 = EXCLUDED.lat,
+		    lng                 = EXCLUDED.lng,
+		    location            = EXCLUDED.location,
+		    type                = EXCLUDED.type,
+		    address             = EXCLUDED.address,
+		    photo_url           = EXCLUDED.photo_url,
+		    google_rating       = EXCLUDED.google_rating,
+		    google_rating_count = EXCLUDED.google_rating_count,
+		    places_synced_at    = NOW()`,
 		p.PlaceID, p.Name,
 		p.Geometry.Location.Lat, p.Geometry.Location.Lng,
-		vType, p.Vicinity, photo,
+		vType, p.Vicinity, photo, p.Rating, p.UserRatingsTotal,
 	)
 	return err
 }

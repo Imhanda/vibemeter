@@ -49,7 +49,7 @@ func SearchPlaces(c *gin.Context) {
 	if filters.Type != "" {
 		const q = `
 			SELECT id, name, COALESCE(type,'') AS type, lat, lng,
-			       COALESCE(photo_url,'') AS photo_url,
+			       COALESCE(photo_url,'') AS photo_url, google_rating,
 			       ST_Distance(
 			           location::geography,
 			           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
@@ -66,7 +66,7 @@ func SearchPlaces(c *gin.Context) {
 	} else {
 		const q = `
 			SELECT id, name, COALESCE(type,'') AS type, lat, lng,
-			       COALESCE(photo_url,'') AS photo_url,
+			       COALESCE(photo_url,'') AS photo_url, google_rating,
 			       ST_Distance(
 			           location::geography,
 			           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
@@ -99,7 +99,7 @@ func SearchPlaces(c *gin.Context) {
 		}
 
 		vibeScore := 0.0
-		if vs, err := cache.GetVenueScore(c.Request.Context(), row.ID); err == nil && vs != nil {
+		if vs, err := cache.GetVenueScoreOrFallback(c.Request.Context(), row.ID, row.GoogleRating); err == nil && vs != nil {
 			if vs.Score < filters.MinScore {
 				continue
 			}
@@ -107,6 +107,7 @@ func SearchPlaces(c *gin.Context) {
 			resp.VibeScore = &vs.Score
 			resp.Confidence = &vs.Confidence
 			resp.CheckInCount = vs.CheckInCount
+			resp.ScoreSource = vs.Source
 			resp.LastUpdated = vs.LastUpdated.Format("2006-01-02T15:04:05Z")
 		} else if filters.MinScore > 0 {
 			continue

@@ -21,6 +21,7 @@ type nearbyPlaceResponse struct {
 	DistanceM    float64  `json:"distance_m"`
 	VibeScore    *float64 `json:"vibe_score"`
 	Confidence   *float64 `json:"confidence"`
+	ScoreSource  string   `json:"score_source,omitempty"`
 	CheckInCount int      `json:"check_in_count"`
 	LastUpdated  string   `json:"last_updated,omitempty"`
 	PhotoURL     string   `json:"photo_url,omitempty"`
@@ -81,7 +82,7 @@ func GetNearbyPlaces(c *gin.Context) {
 
 	const q = `
 		SELECT p.id, p.name, COALESCE(p.type,'') AS type, p.lat, p.lng,
-		       COALESCE(p.photo_url,'') AS photo_url,
+		       COALESCE(p.photo_url,'') AS photo_url, p.google_rating,
 		       ST_Distance(
 		           p.location::geography,
 		           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
@@ -153,13 +154,14 @@ func GetNearbyPlaces(c *gin.Context) {
 			ActiveTags: activeTags,
 		}
 
-		if vs, err := cache.GetVenueScore(c.Request.Context(), row.ID); err == nil && vs != nil {
+		if vs, err := cache.GetVenueScoreOrFallback(c.Request.Context(), row.ID, row.GoogleRating); err == nil && vs != nil {
 			score := vs.Score
 			conf := vs.Confidence
 			if score >= minScore {
 				resp.VibeScore = &score
 				resp.Confidence = &conf
 				resp.CheckInCount = vs.CheckInCount
+				resp.ScoreSource = vs.Source
 				resp.LastUpdated = vs.LastUpdated.Format("2006-01-02T15:04:05Z")
 			} else if minScore > 0 {
 				continue // skip venues below min_score

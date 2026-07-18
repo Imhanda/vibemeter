@@ -18,6 +18,8 @@ CREATE TABLE places (
   photo_url     TEXT,
   opening_hours JSONB,
   places_synced_at TIMESTAMPTZ,
+  google_rating       FLOAT,
+  google_rating_count INT,
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 

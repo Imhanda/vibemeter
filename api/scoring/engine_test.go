@@ -92,9 +92,9 @@ func TestComputeRawScore_ManualRating(t *testing.T) {
 		rating int
 		want   float64
 	}{
-		{1, 0.0},             // (1-1)/4 × 100 × 0.7 = 0
-		{3, 35.0},            // (3-1)/4 × 100 × 0.7 = 35
-		{5, 70.0},            // (5-1)/4 × 100 × 0.7 = 70
+		{1, 0.0},  // (1-1)/4 × 100 × 0.7 = 0
+		{3, 35.0}, // (3-1)/4 × 100 × 0.7 = 35
+		{5, 70.0}, // (5-1)/4 × 100 × 0.7 = 70
 	}
 	for _, tc := range cases {
 		req := &models.SubmitVibeRequest{ManualRating: ptr(tc.rating)}
@@ -275,5 +275,50 @@ func TestHaversine_FarAway(t *testing.T) {
 	d := scoring.Haversine(12.9716, 77.5946, 19.0760, 72.8777)
 	if d < 800_000 || d > 900_000 {
 		t.Errorf("Bengaluru→Mumbai: expected ~845km, got %.0fm", d)
+	}
+}
+
+// ── BlendWithGoogleRating ────────────────────────────────────────────────────
+
+func TestBlendWithGoogleRating_NoGoogleRating_PassesThroughCheckinScore(t *testing.T) {
+	score, source := scoring.BlendWithGoogleRating(72.0, 0, 0)
+	approx(t, score, 72.0, 0.001, "score")
+	if source != "checkin" {
+		t.Errorf("expected source=checkin, got %s", source)
+	}
+}
+
+func TestBlendWithGoogleRating_ZeroCheckins_PureGoogle(t *testing.T) {
+	// 4.5 stars * 20 = 90
+	score, source := scoring.BlendWithGoogleRating(0, 0, 4.5)
+	approx(t, score, 90.0, 0.001, "score")
+	if source != "google" {
+		t.Errorf("expected source=google, got %s", source)
+	}
+}
+
+func TestBlendWithGoogleRating_AtGraduationThreshold_PureCheckin(t *testing.T) {
+	score, source := scoring.BlendWithGoogleRating(72.0, scoring.CheckinGraduationThreshold, 4.5)
+	approx(t, score, 72.0, 0.001, "score")
+	if source != "checkin" {
+		t.Errorf("expected source=checkin, got %s", source)
+	}
+}
+
+func TestBlendWithGoogleRating_BeyondGraduationThreshold_StillPureCheckin(t *testing.T) {
+	score, source := scoring.BlendWithGoogleRating(72.0, scoring.CheckinGraduationThreshold*3, 4.5)
+	approx(t, score, 72.0, 0.001, "score")
+	if source != "checkin" {
+		t.Errorf("expected source=checkin, got %s", source)
+	}
+}
+
+func TestBlendWithGoogleRating_PartialCheckins_WeightedBlend(t *testing.T) {
+	// 10 of 20 threshold => w=0.5; google = 4.0*20 = 80; checkin = 60
+	// blended = 0.5*60 + 0.5*80 = 70
+	score, source := scoring.BlendWithGoogleRating(60.0, scoring.CheckinGraduationThreshold/2, 4.0)
+	approx(t, score, 70.0, 0.001, "score")
+	if source != "blended" {
+		t.Errorf("expected source=blended, got %s", source)
 	}
 }

@@ -24,6 +24,7 @@ type submitVibeResponse struct {
 	Status      string  `json:"status"`
 	VibeScore   float64 `json:"venue_score"`
 	Confidence  float64 `json:"confidence"`
+	ScoreSource string  `json:"score_source"`
 	BadgeEarned *string `json:"badge_earned"`
 }
 
@@ -32,6 +33,7 @@ type venueDetailResponse struct {
 	Name            string                    `json:"name"`
 	VibeScore       *float64                  `json:"vibe_score"`
 	Confidence      *float64                  `json:"confidence"`
+	ScoreSource     string                    `json:"score_source,omitempty"`
 	CheckInCount    int                       `json:"check_in_count"`
 	ActiveTags      []string                  `json:"active_tags"`
 	SignalBreakdown *models.SignalBreakdown   `json:"signal_breakdown,omitempty"`
@@ -69,7 +71,7 @@ func SubmitVibe(c *gin.Context) {
 
 	// --- Fetch venue for geo-fence ---
 	var place models.Place
-	if err := db.DB.Get(&place, `SELECT id, name, lat, lng FROM places WHERE id = $1`, req.PlaceID); err != nil {
+	if err := db.DB.Get(&place, `SELECT id, name, lat, lng, google_rating FROM places WHERE id = $1`, req.PlaceID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "venue not found"})
 		return
 	}
@@ -165,16 +167,29 @@ func SubmitVibe(c *gin.Context) {
 
 	venueScore, confidence := scoring.AggregateWithDecay(allRecent, time.Now())
 
+	// --- Blend with Google rating fallback (cold-start), graduating to pure
+	// check-in score as the venue accumulates all-time check-in history ---
+	var totalCheckins int
+	_ = db.DB.Get(&totalCheckins,
+		`SELECT COUNT(*) FROM vibe_contributions WHERE place_id = $1 AND flagged = false`,
+		req.PlaceID)
+	var googleRating float64
+	if place.GoogleRating != nil {
+		googleRating = *place.GoogleRating
+	}
+	blendedScore, scoreSource := scoring.BlendWithGoogleRating(venueScore, totalCheckins, googleRating)
+
 	// --- Update Redis ---
 	// crowd, music, ambient already populated from the scoring block above
 	vs := cache.VenueScore{
-		Score:        venueScore,
+		Score:        blendedScore,
 		Confidence:   confidence,
 		CheckInCount: len(allRecent),
 		LastUpdated:  time.Now(),
 		CrowdEnergy:  crowd,
 		MusicEnergy:  music,
 		AmbientDB:    ambient,
+		Source:       scoreSource,
 	}
 	if err := cache.SetVenueScore(ctx, req.PlaceID, vs); err != nil {
 		log.Println("redis set error:", err)
@@ -184,7 +199,7 @@ func SubmitVibe(c *gin.Context) {
 	wsPayload, _ := json.Marshal(map[string]interface{}{
 		"type":           "score_update",
 		"place_id":       req.PlaceID,
-		"vibe_score":     venueScore,
+		"vibe_score":     blendedScore,
 		"confidence":     confidence,
 		"check_in_count": len(allRecent),
 		"ts":             time.Now().UTC().Format(time.RFC3339),
@@ -234,7 +249,7 @@ func SubmitVibe(c *gin.Context) {
 				}
 			}
 		}
-	}(req.PlaceID, venueScore)
+	}(req.PlaceID, blendedScore)
 
 	// --- Trust & Anti-Spam evaluation (async, never blocks the response) ---
 	// Gated on !SkipAuth so local dev loops against the shared "dev-user"
@@ -270,8 +285,9 @@ func SubmitVibe(c *gin.Context) {
 
 	c.JSON(http.StatusOK, submitVibeResponse{
 		Status:      "accepted",
-		VibeScore:   venueScore,
+		VibeScore:   blendedScore,
 		Confidence:  confidence,
+		ScoreSource: scoreSource,
 		BadgeEarned: badgeEarned,
 	})
 }
@@ -284,7 +300,7 @@ func GetVenueVibe(c *gin.Context) {
 	if err := db.DB.Get(&place, `
 		SELECT id, name, lat, lng, COALESCE(type,'') AS type,
 		       COALESCE(address,'') AS address,
-		       COALESCE(photo_url,'') AS photo_url, created_at
+		       COALESCE(photo_url,'') AS photo_url, google_rating, created_at
 		FROM places WHERE id = $1`, placeID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "venue not found"})
 		return
@@ -292,8 +308,9 @@ func GetVenueVibe(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Current score from Redis
-	vs, _ := cache.GetVenueScore(ctx, placeID)
+	// Current score from Redis, falling back to the venue's Google rating
+	// when there's no check-in-derived score cached yet (cold start).
+	vs, _ := cache.GetVenueScoreOrFallback(ctx, placeID, place.GoogleRating)
 
 	// Active tags — distinct tags from recent unflagged contributions
 	var activeTags pq.StringArray
@@ -323,6 +340,7 @@ func GetVenueVibe(c *gin.Context) {
 		resp.VibeScore = &score
 		resp.Confidence = &conf
 		resp.CheckInCount = vs.CheckInCount
+		resp.ScoreSource = vs.Source
 	}
 
 	// Hourly history — last 24 hours
