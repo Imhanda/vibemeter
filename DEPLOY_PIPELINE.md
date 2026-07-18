@@ -101,6 +101,17 @@ changes ──┬──> test ──> build-and-push ──> deploy
    and fails the job loudly, with the remote command's stdout/stderr printed
    in the log, if anything went wrong.
 
+   If that fails, a second step (`if: failure()`) automatically collects
+   read-only diagnostics from the box — git status, container state, recent
+   API container logs, health check, disk usage — the same things you'd
+   normally check by hand over SSM after a bad deploy. If `ANTHROPIC_API_KEY`
+   is set, it also asks Claude for a plain-English probable cause, primed
+   with the specific failure patterns this pipeline has already hit once
+   (git ownership, diverged history, missing schema) so it can recognize a
+   repeat instantly instead of re-deriving it from scratch. Posted to the
+   job's step summary; never changes the job's pass/fail outcome, which is
+   already determined by the deploy step itself.
+
 ---
 
 ## Why SSM instead of SSH

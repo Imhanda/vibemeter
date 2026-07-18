@@ -257,3 +257,93 @@ jobs:
             echo "::error::SSM deploy finished with status=$STATUS"
             exit 1
           fi
+      - name: Diagnose deploy failure (advisory only, never fails the job further)
+        if: failure()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set +e  # diagnostics must never mask or replace the original failure
+
+          echo "### Deploy failure diagnostics" >> "$GITHUB_STEP_SUMMARY"
+
+          # Read-only — gathers the same things a human would check over SSM
+          # after a failed deploy, so the next incident doesn't need a fresh
+          # round of manual back-and-forth to even see what's going on.
+          cat > /tmp/diagnose.sh <<'EOF'
+          echo "--- git status ---"
+          cd /home/ssm-user/vibemeter && git status 2>&1
+          echo "--- git log -1 ---"
+          git log --oneline -1 2>&1
+          echo "--- docker compose ps ---"
+          docker compose -f docker-compose.prod.yml ps 2>&1
+          echo "--- compose image line ---"
+          grep image: docker-compose.prod.yml 2>&1
+          echo "--- api container logs (last 40 lines) ---"
+          docker logs vibemeter-api-1 --tail 40 2>&1
+          echo "--- health check ---"
+          curl -s -o /dev/null -w "http_status=%{http_code}\n" http://localhost:8080/health 2>&1
+          echo "--- disk usage ---"
+          df -h / 2>&1
+          EOF
+
+          PARAMS=$(jq -n --rawfile script /tmp/diagnose.sh '{commands: [$script]}')
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "vibemeter-api diagnose-failure" \
+            --parameters "$PARAMS" \
+            --query "Command.CommandId" --output text 2>/dev/null)
+
+          if [ -z "$COMMAND_ID" ] || [ "$COMMAND_ID" = "None" ]; then
+            echo "Could not collect diagnostics — the AWS/SSM call itself failed (likely the same underlying issue that broke the deploy, e.g. AWS auth)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          aws ssm wait command-executed --region "$REGION" --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" >/dev/null 2>&1
+
+          DIAG_OUT=$(aws ssm get-command-invocation --region "$REGION" --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query "StandardOutputContent" --output text 2>/dev/null)
+          DIAG_ERR=$(aws ssm get-command-invocation --region "$REGION" --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --query "StandardErrorContent" --output text 2>/dev/null)
+
+          {
+            echo '<details><summary>Raw diagnostics (click to expand)</summary>'
+            echo ''
+            echo '```'
+            echo "$DIAG_OUT"
+            echo "$DIAG_ERR"
+            echo '```'
+            echo '</details>'
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "_(Set ANTHROPIC_API_KEY to also get a plain-English probable-cause summary here.)_" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          KNOWN_ISSUES="Known past failure patterns on this exact pipeline: (1) dubious ownership git errors happen when the git-owning user differs from the SSM command execution user (root) - already fixed by allowlisting the directory via git config --system --add safe.directory, present in the deploy script, so this should not recur unless the box was rebuilt; (2) divergent branches or non-fast-forward errors happen if the box git history was ever rewritten upstream - the deploy script uses git reset --hard, not git pull, specifically to avoid this, so this should not recur either; (3) missing-table or relation errors mean a migration or schema change was pushed without infra postgres init.sql being applied to RDS first - that is a manual step, not automated."
+
+          DIAG_COMBINED=$(printf '%s\n%s' "$DIAG_OUT" "$DIAG_ERR")
+
+          PROMPT=$(jq -n --arg known "$KNOWN_ISSUES" --arg diag "$DIAG_COMBINED" '
+            "You are diagnosing a failed automated deploy of a Go API to an EC2 box via AWS SSM. " + $known + " Given the diagnostics below (git status, container state, recent logs, health check, disk usage), give a short plain-English probable cause and a concrete next step. If it matches one of the known patterns above, say so explicitly. Reply in 3-4 sentences, no markdown headers.\n\nDiagnostics:\n" + $diag
+          ')
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n --arg prompt "$PROMPT" '{model: "claude-haiku-4-5", max_tokens: 400, messages: [{role: "user", content: $prompt}]}')")
+
+          ANALYSIS=$(echo "$RESPONSE" | jq -r '.content[0].text // empty' 2>/dev/null)
+
+          if [ -z "$ANALYSIS" ]; then
+            echo "_(Claude analysis unavailable — API error or unparseable response.)_" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**Probable cause:** $ANALYSIS" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit 0
