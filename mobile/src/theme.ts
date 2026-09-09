@@ -20,7 +20,11 @@ export const C = {
   // Text
   textPrimary:   "#F0EEFF",
   textSecondary: "#8A82A8",
-  textMuted:     "#4A4568",
+  // textMuted passes 4.5:1 on the dark surfaces — safe for readable body text.
+  textMuted:     "#7A7398",
+  // textFaint is decorative only (placeholders, disabled captions) — do NOT
+  // use it for anything a user needs to read.
+  textFaint:     "#4A4568",
 
   // Borders
   border: "#221E38",

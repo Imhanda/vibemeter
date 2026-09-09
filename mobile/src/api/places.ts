@@ -11,7 +11,11 @@ export interface NearbyVenue {
   last_updated: string | null;
   photo_url: string;
   active_tags: string[];
+  // "checkin" | "blended" | "google" | "last_night" — where vibe_score came from
+  score_source?: string;
 }
+
+export type NearbyWindow = "last_night";
 
 export interface VenueDetail {
   place_id: string;
@@ -35,11 +39,13 @@ export function getNearbyVenues(
   type?: string,
   minScore?: number,
   tags?: string[],
+  window?: NearbyWindow,
 ): Promise<NearbyVenue[]> {
   let path = `/v1/places/nearby?lat=${lat}&lng=${lng}&radius=${radius}`;
   if (type) path += `&type=${type}`;
   if (minScore != null) path += `&min_score=${minScore}`;
   if (tags && tags.length > 0) path += `&tags=${tags.join(",")}`;
+  if (window) path += `&window=${window}`;
   return api.get<NearbyVenue[]>(path);
 }
 

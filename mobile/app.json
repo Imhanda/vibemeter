@@ -16,11 +16,10 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.vibemeter.app",
       "googleServicesFile": "./GoogleService-Info.plist",
+      "usesAppleSignIn": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "VibeMeter records 10 seconds of ambient audio and transmits it to a processing server to classify music, crowd, and ambient sound levels. The audio is analysed in memory and discarded immediately — it is never stored.",
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
+        "NSMicrophoneUsageDescription": "VibeMeter records about 10 seconds of ambient sound when you tap Check In, sends it over HTTPS to our server to measure crowd noise and music energy, and discards it right after — the recording is never saved on your device or ours.",
+        "NSLocationWhenInUseUsageDescription": "VibeMeter uses your location to list venues near you and to confirm you're at a venue when you submit a vibe check-in."
       }
     },
     "android": {
@@ -29,20 +28,29 @@
       },
       "package": "com.vibemeter.app",
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
       ]
     },
     "newArchEnabled": true,
     "plugins": [
       "expo-asset",
       "expo-web-browser",
+      "expo-apple-authentication",
       [
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.368682546170-26n1ubcieuamj7508msrh7082qkdigre"
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "VibeMeter uses your location to list venues near you and to confirm you're at a venue when you submit a vibe check-in."
+        }
+      ]
     ]
   }
 }

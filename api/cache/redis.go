@@ -103,6 +103,13 @@ func GetRateLimit(ctx context.Context, userID, placeID string) (int64, error) {
 	return count, err
 }
 
+// RateLimitTTL returns how long until the per-user-per-venue counter resets.
+// Zero or negative means no active window.
+func RateLimitTTL(ctx context.Context, userID, placeID string) (time.Duration, error) {
+	key := fmt.Sprintf("ratelimit:%s:%s", userID, placeID)
+	return RDB.TTL(ctx, key).Result()
+}
+
 // IncrReportLimit increments the per-user daily venue-report counter.
 // Returns the new count. Sets a 24-hour TTL on first increment.
 func IncrReportLimit(ctx context.Context, userID string) (int64, error) {
