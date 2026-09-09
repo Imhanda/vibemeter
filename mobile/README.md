@@ -175,7 +175,7 @@ sock.disconnect(); // call in useEffect cleanup
 |---|---|
 | Location | Hardcoded Bengaluru centre — `expo-location` wired up in next sprint |
 | Auth | `X-User-ID` dev header — Firebase Google Sign-In coming in next sprint |
-| Audio check-in | Emoji fallback only — on-device YAMNet audio capture in Weeks 5–6 |
+| Audio check-in | Records ~10 s and uploads it to `POST /v1/vibe/analyse` for server-side YAMNet scoring; audio is discarded after inference. Emoji rating is the manual fallback. |
 | Map view | Venue list — Google Maps SDK pin view in next sprint |
 
 ---

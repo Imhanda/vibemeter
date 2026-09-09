@@ -2,20 +2,20 @@
 
 > Real-time nightlife vibe scoring using ambient audio intelligence
 
-VibeMeter lets you discover nearby bars, pubs, clubs, and restaurants and know whether they're actually lively **right now** — not just whether they have good reviews. Users do a 10-second on-device audio check-in; only three computed floats are posted to the server. No raw audio ever leaves the device.
+VibeMeter lets you discover nearby bars, pubs, clubs, and restaurants and know whether they're actually lively **right now** — not just whether they have good reviews. Users do a ~10-second ambient-sound check-in; the recording is sent to the backend, scored into three numeric signals, and discarded immediately — it is never stored on the device or the server. Users can also skip the mic and rate the vibe manually.
 
-Scores decay over 3 hours, so the data always reflects the present moment.
+Live scores are computed over a rolling 3-hour window, so the data always reflects the present moment.
 
 ---
 
 ## How it works
 
-1. User taps **Check the Vibe** at a venue
-2. On-device ML (YAMNet via Core ML / TFLite) analyses 10 seconds of ambient audio
-3. Three signals are extracted entirely on-device: `crowd_energy`, `music_energy`, `ambient_db`
-4. Only those three floats are POSTed to the API — no audio is transmitted
+1. User taps **Check the Vibe** at a venue and either records ~10 seconds of ambient sound or picks a manual rating
+2. For a sound check-in, the audio is uploaded over HTTPS to the API, which proxies it to the YAMNet sidecar
+3. YAMNet classifies the clip in memory into `crowd_energy`, `music_energy`, `ambient_db`; the audio bytes are then discarded — never written to disk or stored
+4. Those three floats (plus the venue ID and the user's location for the geo-fence check) are what persist
 5. The backend aggregates recent check-ins with exponential time-decay and updates the live score
-6. All connected clients receive the new score via WebSocket within 3 seconds
+6. All connected clients receive the new score via WebSocket within a few seconds
 
 ---
 
@@ -45,11 +45,11 @@ Scores expire automatically from Redis after 3 hours via TTL — no cron job nee
 
 | Layer | Technology |
 |---|---|
-| Mobile | React Native + Expo 0.74+ |
-| iOS audio / ML | AVFoundation + Core ML (YAMNet) |
-| Android audio / ML | AudioRecord + TFLite (YAMNet + NNAPI) |
+| Mobile | React Native + Expo (SDK 54) |
+| Audio capture | `expo-audio` (~10 s clip, uploaded for scoring) |
+| Server-side ML | YAMNet (TensorFlow Hub) in a Flask sidecar |
 | Maps | Google Maps SDK |
-| Auth | Firebase Auth (Google + Apple Sign-In) |
+| Auth | Firebase Auth (Sign in with Apple + Google) |
 | Backend | Go 1.22 + Gin |
 | WebSocket | gorilla/websocket + Redis pub/sub |
 | Primary DB | PostgreSQL 16 + PostGIS |
@@ -102,12 +102,17 @@ All endpoints require `Authorization: Bearer <firebase_jwt>`. Set `SKIP_AUTH=tru
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/v1/vibe/analyse` | Upload 10s audio → YAMNet signals (crowd, music, ambient) |
+| `POST` | `/v1/vibe/analyse` | Upload ~10s audio → YAMNet signals (crowd, music, ambient); audio discarded after inference |
 | `POST` | `/v1/vibe` | Submit a vibe check-in with audio signals or manual rating |
 | `GET` | `/v1/vibe/:place_id` | Venue detail + score history |
-| `GET` | `/v1/places/nearby` | Nearby venues with live scores |
+| `GET` | `/v1/vibe/:place_id/precheck` | Whether a check-in is allowed now (rate limit / geo-fence) |
+| `GET` | `/v1/places/nearby` | Nearby venues with live scores (`?window=last_night` for previous-night peaks) |
 | `GET` | `/v1/user/profile` | Authenticated user profile + badges |
 | `POST` | `/v1/user/follow/:place_id` | Subscribe to venue push notifications |
+| `DELETE` | `/v1/me` | Delete account (anonymises contributions) |
+| `POST` | `/v1/venues/:id/reports` | Report a venue's score (`wrong` / `closed` / `spam` / `unsafe`) |
+| `GET` | `/v1/admin/reports` | Moderation queue (admin) |
+| `POST` | `/v1/admin/reports/:id/resolve` | Resolve a report (admin) |
 | `GET` | `/v1/ws` | WebSocket — subscribe to live score updates |
 
 ### POST /v1/vibe
@@ -195,11 +200,14 @@ For step-by-step instructions to run the app locally (including tool installatio
 
 ## Privacy
 
-- **Minimal audio transmission** — 10 seconds of audio is uploaded to the backend solely for YAMNet classification. No audio is stored in a database or object storage.
-- **In-memory processing only** — the YAMNet sidecar receives audio bytes, runs inference in RAM, and returns three floats. The audio is discarded immediately after analysis — never written to disk.
+The audio pipeline is **server-side**. This is a deliberate choice; the App Store privacy label declares **Audio Data — collected, app functionality, not linked to identity**, and all in-app copy reflects it.
+
+- **Audio is transmitted** — ~10 s of audio is uploaded over HTTPS to the API, which proxies it to the YAMNet sidecar. It is used solely for classification.
+- **In-memory only** — the sidecar runs inference in RAM and returns three floats. The audio bytes are never written to disk, logged, or stored in a database or object storage.
 - **No voice transcription** — YAMNet classifies sound categories (music, crowd, noise), not speech content or speaker identity.
-- **Microphone scope** — permission is requested only when the user taps Check the Vibe. No background access.
-- **GDPR / DPDPA** — a user deletion request is satisfied by deleting their rows from `vibe_contributions` and `users`. No audio to purge.
+- **Manual fallback** — users can decline the microphone and rate with an emoji scale.
+- **Microphone scope** — permission is requested (behind an in-app primer) only when the user checks in. No background access.
+- **Account deletion** — in-app (`DELETE /v1/me`) anonymises the user's `vibe_contributions` and `trust_events` (user_id → NULL) and hard-deletes `users`, `badges`, `notification_subscriptions` and `push_tokens`. The client then deletes the Firebase Auth record. No audio to purge.
 
 ---
 

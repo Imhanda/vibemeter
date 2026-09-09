@@ -24,18 +24,18 @@
 <body>
 
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: June 21, 2026</p>
+  <p class="updated">Last updated: September 9, 2026</p>
 
   <p>VibeMeter ("we", "our", or "the app") is a nightlife vibe-scoring app that lets users check in to nearby venues using short ambient audio recordings. This policy explains what data we collect, how we use it, and how we protect it.</p>
 
-  <h2>1. Microphone Access</h2>
-  <p>When you perform an audio check-in, the app records <strong>10 seconds of ambient audio</strong> through your device's microphone. This audio is:</p>
+  <h2>1. Microphone Access &amp; Audio Data</h2>
+  <p>When you tap Check In and choose the automatic scan, the app records about <strong>10 seconds of ambient audio</strong> through your device's microphone. That audio is:</p>
   <ul>
-    <li>Transmitted over HTTPS to our processing server</li>
+    <li><strong>Transmitted over HTTPS to our processing server</strong> — the analysis runs on our server, not only on your device</li>
     <li>Analysed in memory to extract three numeric signals: crowd energy, music energy, and ambient volume level</li>
-    <li><strong>Discarded immediately after analysis</strong> — the raw audio is never stored, logged, or shared</li>
+    <li><strong>Discarded immediately after analysis</strong> — the recording is never written to disk, logged, or shared, on your device or on our servers</li>
   </ul>
-  <p>Only the three numeric signals derived from the audio are saved, not the audio itself.</p>
+  <p>Only the three numeric signals derived from the audio are stored, never the audio itself. We do not perform speech recognition and cannot identify speakers or conversations. You can skip the microphone entirely and rate the vibe manually with an emoji scale.</p>
 
   <h2>2. Location Access</h2>
   <p>The app requests access to your device's location (while the app is in use) to:</p>
@@ -46,7 +46,10 @@
   <p>Your precise location is used in real time for these purposes. We do not build a history of your locations or share your location with third parties.</p>
 
   <h2>3. Account Information</h2>
-  <p>You sign in with your Google account via Firebase Authentication. We receive your <strong>name and email address</strong> from Google solely to create and identify your account. We do not access your Google contacts, calendar, or any other Google data.</p>
+  <p>You sign in with <strong>Sign in with Apple</strong> or your <strong>Google account</strong> via Firebase Authentication. We receive your name and email address (or Apple's private relay email, if you choose to hide it) solely to create and identify your account. We do not access your contacts, calendar, photos, or any other data from Apple or Google.</p>
+
+  <h2>3a. Push Notifications</h2>
+  <p>If you turn on notifications for a venue, we store a device push token (via Expo's push service and Apple Push Notification service / Firebase Cloud Messaging) so we can alert you when that venue's score rises above your chosen threshold. Tokens are deleted when you unfollow all venues or delete your account.</p>
 
   <h2>4. Check-In Data</h2>
   <p>When you submit a check-in, we store:</p>
@@ -57,13 +60,22 @@
   </ul>
   <p>This data is used to compute real-time vibe scores for venues and to award in-app badges. It is not sold or shared with advertisers.</p>
 
-  <h2>5. Data Retention</h2>
-  <p>Vibe check-in data is used in a rolling 3-hour aggregation window and then archived. You may request deletion of your account and associated data at any time by contacting us at the address below.</p>
+  <h2>5. Data Retention &amp; Deletion</h2>
+  <p>Live vibe scores are computed over a rolling 3-hour window. Individual check-in records are retained to compute venue history and trust scores.</p>
+  <p>You can delete your account at any time from <strong>Profile &rarr; Account &amp; Data &rarr; Delete Account</strong> inside the app. When you do:</p>
+  <ul>
+    <li>Your account, name, email, badges, streaks, venue follows and push tokens are permanently removed.</li>
+    <li>Your past check-ins are kept but <strong>anonymised</strong> — the link to your account is severed — so aggregate venue scores stay accurate.</li>
+    <li>Residual copies in encrypted backups are purged within <strong>30 days</strong>.</li>
+  </ul>
+  <p>You may also email us (below) to request deletion.</p>
 
   <h2>6. Third-Party Services</h2>
   <ul>
     <li><strong>Firebase (Google)</strong> — authentication and account management. Google's privacy policy applies: <a href="https://policies.google.com/privacy">policies.google.com/privacy</a></li>
-    <li><strong>OpenStreetMap</strong> — venue data is sourced from OpenStreetMap, which is publicly available map data</li>
+    <li><strong>Sign in with Apple</strong> — authentication. Apple's privacy policy applies: <a href="https://www.apple.com/legal/privacy/">apple.com/legal/privacy</a></li>
+    <li><strong>Expo push notifications</strong> — delivery of venue alerts you opt into</li>
+    <li><strong>OpenStreetMap &amp; Google Places</strong> — venue names, locations and public ratings used to populate the map</li>
   </ul>
   <p>We do not use advertising SDKs, analytics SDKs, or crash reporting services that collect personal data.</p>
 
