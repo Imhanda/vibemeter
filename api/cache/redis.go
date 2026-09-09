@@ -103,6 +103,42 @@ func GetRateLimit(ctx context.Context, userID, placeID string) (int64, error) {
 	return count, err
 }
 
+// IncrReportLimit increments the per-user daily venue-report counter.
+// Returns the new count. Sets a 24-hour TTL on first increment.
+func IncrReportLimit(ctx context.Context, userID string) (int64, error) {
+	key := fmt.Sprintf("reportlimit:%s", userID)
+	count, err := RDB.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if count == 1 {
+		RDB.Expire(ctx, key, 24*time.Hour)
+	}
+	return count, nil
+}
+
+func GetReportLimit(ctx context.Context, userID string) (int64, error) {
+	key := fmt.Sprintf("reportlimit:%s", userID)
+	count, err := RDB.Get(ctx, key).Int64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return count, err
+}
+
+// PurgeUser clears a user's transient Redis state on account deletion: trust
+// score, daily report counter, and every per-venue rate-limit counter. Venue
+// subscriber hashes are cleaned separately by the caller, which knows which
+// venues the user followed.
+func PurgeUser(ctx context.Context, userID string) {
+	RDB.Del(ctx, fmt.Sprintf("trust:%s", userID))
+	RDB.Del(ctx, fmt.Sprintf("reportlimit:%s", userID))
+	iter := RDB.Scan(ctx, 0, fmt.Sprintf("ratelimit:%s:*", userID), 100).Iterator()
+	for iter.Next(ctx) {
+		RDB.Del(ctx, iter.Val())
+	}
+}
+
 func GetTrustScore(ctx context.Context, userID string) (float64, error) {
 	key := fmt.Sprintf("trust:%s", userID)
 	score, err := RDB.Get(ctx, key).Float64()

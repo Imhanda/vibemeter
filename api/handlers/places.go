@@ -60,6 +60,10 @@ func GetNearbyPlaces(c *gin.Context) {
 		}
 	}
 	venueType := c.Query("type")
+	// window=last_night returns each venue's peak score from the previous
+	// evening instead of its live score — powers the daytime "Last night" tab
+	// when nothing is going on right now.
+	lastNight := c.Query("window") == "last_night"
 	minScore := 0.0
 	if ms := c.Query("min_score"); ms != "" {
 		if v, err2 := strconv.ParseFloat(ms, 64); err2 == nil {
@@ -139,6 +143,34 @@ func GetNearbyPlaces(c *gin.Context) {
 		}
 	}
 
+	// Peak scores from last night, keyed by place_id — only queried for the
+	// "Last night" tab.
+	var lastNightPeak map[string]float64
+	if lastNight {
+		lastNightPeak = map[string]float64{}
+		type pkRow struct {
+			PlaceID string  `db:"place_id"`
+			Peak    float64 `db:"peak"`
+		}
+		var pk []pkRow
+		_ = db.DB.Select(&pk, `
+			SELECT place_id, MAX(hourly_avg) AS peak
+			FROM (
+				SELECT place_id,
+				       date_trunc('hour', created_at) AS h,
+				       AVG(raw_score)                 AS hourly_avg
+				FROM vibe_contributions
+				WHERE NOT flagged
+				  AND created_at >= date_trunc('day', NOW()) - INTERVAL '6 hours'
+				  AND created_at <  date_trunc('day', NOW()) + INTERVAL '6 hours'
+				GROUP BY place_id, h
+			) t
+			GROUP BY place_id`)
+		for _, r := range pk {
+			lastNightPeak[r.PlaceID] = r.Peak
+		}
+	}
+
 	result := make([]nearbyPlaceResponse, 0, len(rows))
 	for _, row := range rows {
 		activeTags := []string(row.ActiveTags)
@@ -152,6 +184,16 @@ func GetNearbyPlaces(c *gin.Context) {
 			DistanceM:  row.DistanceM,
 			PhotoURL:   row.PhotoURL,
 			ActiveTags: activeTags,
+		}
+
+		if lastNight {
+			if peak, ok := lastNightPeak[row.ID]; ok {
+				p := peak
+				resp.VibeScore = &p
+				resp.ScoreSource = "last_night"
+			}
+			result = append(result, resp)
+			continue
 		}
 
 		if vs, err := cache.GetVenueScoreOrFallback(c.Request.Context(), row.ID, row.GoogleRating); err == nil && vs != nil {

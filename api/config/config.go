@@ -18,6 +18,7 @@ type Config struct {
 	GeoFenceRadiusM    float64
 	ScoreWindowMinutes int
 	RateLimitMax       int
+	ReportRateMax      int
 	SkipAuth           bool
 	SkipGeoFence       bool
 	Port               string
@@ -40,6 +41,7 @@ func Load() {
 		GeoFenceRadiusM:    getEnvFloat("GEO_FENCE_RADIUS_M", 300),
 		ScoreWindowMinutes: getEnvInt("SCORE_WINDOW_MINUTES", 180),
 		RateLimitMax:       getEnvInt("RATE_LIMIT_MAX", 2),
+		ReportRateMax:      getEnvInt("REPORT_RATE_MAX", 10),
 		SkipAuth:           getEnv("SKIP_AUTH", "false") == "true",
 		SkipGeoFence:       getEnv("SKIP_GEO_FENCE", "false") == "true",
 		Port:               getEnv("PORT", "8080"),

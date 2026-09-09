@@ -45,6 +45,10 @@ func main() {
 		v1.POST("/user/follow/:place_id", handlers.FollowVenue)
 		v1.DELETE("/user/follow/:place_id", handlers.UnfollowVenue)
 		v1.POST("/user/push-token", handlers.RegisterPushToken)
+		v1.DELETE("/me", handlers.DeleteMe)
+
+		// User-generated-content moderation
+		v1.POST("/venues/:id/reports", handlers.CreateVenueReport)
 	}
 
 	// WebSocket — auth handled inside handler via query param token
@@ -56,6 +60,8 @@ func main() {
 		admin.POST("/places/sync", handlers.SyncPlaces)
 		admin.GET("/trust/events", handlers.GetTrustEvents)
 		admin.POST("/trust/users/:user_id/override", handlers.OverrideTrustScore)
+		admin.GET("/reports", handlers.ListReports)
+		admin.POST("/reports/:id/resolve", handlers.ResolveReport)
 	}
 
 	log.Printf("VibeMeter API starting on :%s\n", config.C.Port)
