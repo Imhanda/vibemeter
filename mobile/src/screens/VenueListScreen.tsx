@@ -13,8 +13,9 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getNearbyVenues, searchVenues } from "../api/places";
+import { getNearbyVenues, searchVenues, NearbyVenue } from "../api/places";
 import { VenueCard } from "../components/VenueCard";
 import { useVibeStore } from "../store/useVibeStore";
 import { useLocation } from "../hooks/useLocation";
@@ -25,6 +26,15 @@ type Props = NativeStackScreenProps<RootStackParamList, "VenueList">;
 
 const TYPE_FILTERS = ["all", "bar", "club", "restaurant"] as const;
 type TypeFilter = (typeof TYPE_FILTERS)[number];
+
+type ListView = "now" | "last_night";
+const CACHE_KEY = "venues:lastList";
+
+// A venue has no *live* crowd signal when its score is missing or only derived
+// from the Google rating / last night — i.e. nobody has checked in recently.
+function hasLiveVibe(v: NearbyVenue): boolean {
+  return v.vibe_score != null && v.score_source !== "google" && v.score_source !== "last_night";
+}
 
 const VIBE_TAGS: { id: string; label: string }[] = [
   { id: "dj",          label: "🎧 DJ" },
@@ -78,25 +88,50 @@ export function VenueListScreen({ navigation }: Props) {
   const [radius, setRadius] = useState(1000);
   const [radiusModalVisible, setRadiusModalVisible] = useState(false);
   const [draftRadius, setDraftRadius] = useState(1000);
+  const [view, setView] = useState<ListView>("now");
+  const [stale, setStale] = useState(false);
 
   const load = useCallback(
-    async (isRefresh = false, r?: number) => {
+    async (isRefresh = false, r?: number, v: ListView = view) => {
       isRefresh ? setRefreshing(true) : setLoading(true);
       setError(null);
       try {
         const type = filter === "all" ? undefined : filter;
         const data = await getNearbyVenues(
           coords.lat, coords.lng,
-          r ?? radius, type, undefined, tagFilter
+          r ?? radius, type, undefined, tagFilter,
+          v === "last_night" ? "last_night" : undefined,
         );
         setVenues(data);
+        setStale(false);
+        if (v === "now") {
+          AsyncStorage.setItem(
+            CACHE_KEY,
+            JSON.stringify({ ts: Date.now(), venues: data }),
+          ).catch(() => {});
+        }
       } catch (e: any) {
+        // Offline / server down — fall back to the last list we saw.
+        try {
+          const raw = await AsyncStorage.getItem(CACHE_KEY);
+          if (raw && v === "now") {
+            const cached = JSON.parse(raw) as { ts: number; venues: NearbyVenue[] };
+            if (cached.venues?.length) {
+              setVenues(cached.venues);
+              setStale(true);
+              setError(null);
+              return;
+            }
+          }
+        } catch {
+          /* ignore cache errors */
+        }
         setError(e.message ?? "Failed to load venues");
       } finally {
         isRefresh ? setRefreshing(false) : setLoading(false);
       }
     },
-    [coords, filter, tagFilter, radius, setVenues]
+    [coords, filter, tagFilter, radius, view, setVenues]
   );
 
   const handleSearch = async (query: string) => {
@@ -133,6 +168,17 @@ export function VenueListScreen({ navigation }: Props) {
   useEffect(() => {
     if (!locationLoading) load();
   }, [locationLoading, load]);
+
+  function switchView(v: ListView) {
+    if (v === view) return;
+    setView(v);
+    load(false, undefined, v);
+  }
+
+  const now = new Date();
+  const clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const daytimeQuiet = view === "now" && !loading && venues.length > 0 && !venues.some(hasLiveVibe);
+  const showViewTabs = daytimeQuiet || view === "last_night";
 
   return (
     <View style={styles.container}>
@@ -213,6 +259,44 @@ export function VenueListScreen({ navigation }: Props) {
           );
         })}
       </ScrollView>
+
+      {/* ── Time-of-day context ───────────────────────── */}
+      {showViewTabs && (
+        <View style={styles.viewTabs}>
+          {(["now", "last_night"] as ListView[]).map((v) => (
+            <TouchableOpacity
+              key={v}
+              style={[styles.viewTab, view === v && styles.viewTabActive]}
+              onPress={() => switchView(v)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: view === v }}
+            >
+              <Text style={[styles.viewTabText, view === v && styles.viewTabTextActive]}>
+                {v === "now" ? "Now" : "Last night"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {daytimeQuiet && (
+        <View style={styles.infoBanner}>
+          <Text style={styles.infoBannerTitle}>It's {clock} — nothing's going yet</Text>
+          <Text style={styles.infoBannerText}>
+            See what was busy last night, or tap 🔔 on a venue to get pinged when it heats up tonight.
+          </Text>
+        </View>
+      )}
+
+      {view === "last_night" && !loading && (
+        <Text style={styles.viewCaption}>Peak vibe scores from last night</Text>
+      )}
+
+      {stale && (
+        <View style={styles.staleBanner}>
+          <Text style={styles.staleText}>⚠︎ Offline — showing venues from your last visit. Pull to refresh.</Text>
+        </View>
+      )}
 
       {/* ── List / Loading / Error ────────────────────── */}
       {loading && (
@@ -387,6 +471,31 @@ const styles = StyleSheet.create({
   fadeBottom: {
     position: "absolute", bottom: 0, left: 0, right: 0, height: 56,
   },
+
+  viewTabs: {
+    flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 8,
+  },
+  viewTab: {
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1, borderColor: C.border, backgroundColor: C.bgElevated,
+  },
+  viewTabActive: { borderColor: C.teal, backgroundColor: C.teal },
+  viewTabText: { color: C.textSecondary, fontSize: 13, fontWeight: "600" },
+  viewTabTextActive: { color: C.bgBase, fontWeight: "700" },
+  viewCaption: {
+    color: C.textSecondary, fontSize: 12, paddingHorizontal: 20, marginBottom: 6,
+  },
+  infoBanner: {
+    marginHorizontal: 16, marginBottom: 10, padding: 14, borderRadius: 14,
+    backgroundColor: C.bgSurface, borderWidth: 1, borderColor: C.border, gap: 4,
+  },
+  infoBannerTitle: { color: C.textPrimary, fontSize: 14, fontWeight: "700" },
+  infoBannerText: { color: C.textSecondary, fontSize: 12, lineHeight: 17 },
+  staleBanner: {
+    marginHorizontal: 16, marginBottom: 8, paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 10, backgroundColor: "#2A2410", borderWidth: 1, borderColor: C.buzzing,
+  },
+  staleText: { color: C.buzzing, fontSize: 12 },
 
   // Radius modal
   modalOverlay: {

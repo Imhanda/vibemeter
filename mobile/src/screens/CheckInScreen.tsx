@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
-  Alert,
   ScrollView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,24 +14,27 @@ import * as Haptics from "expo-haptics";
 import ConfettiCannon from "react-native-confetti-cannon";
 import { useAudioRecorder, AudioModule, IOSOutputFormat, AudioQuality, setAudioModeAsync } from "expo-audio";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { submitVibe, analyseAudio, AudioSignals } from "../api/vibe";
+import { submitVibe, analyseAudio, precheckVibe, AudioSignals } from "../api/vibe";
 import { useLocation } from "../hooks/useLocation";
 import { useVibeStore } from "../store/useVibeStore";
+import { PermissionPrimer } from "../components/PermissionPrimer";
+import { useReduceMotion } from "../lib/motion";
 import { RootStackParamList } from "../../App";
 import { C, vibeColor, vibeGradient, withAlpha } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CheckIn">;
 type Mode = "listen" | "manual";
 type RecordState = "idle" | "recording" | "uploading" | "done";
+type MicPerm = "undetermined" | "granted" | "denied";
 
 const RECORD_SECONDS = 10;
 
-const EMOJI_OPTIONS: { label: string; value: number }[] = [
-  { label: "💤", value: 1 },
-  { label: "😐", value: 2 },
-  { label: "😊", value: 3 },
-  { label: "⚡", value: 4 },
-  { label: "🔥", value: 5 },
+const EMOJI_OPTIONS: { label: string; value: number; a11y: string }[] = [
+  { label: "💤", value: 1, a11y: "Dead" },
+  { label: "😐", value: 2, a11y: "Slow" },
+  { label: "😊", value: 3, a11y: "Buzzing" },
+  { label: "⚡", value: 4, a11y: "Going off" },
+  { label: "🔥", value: 5, a11y: "Raging" },
 ];
 
 // Vibe gradient per emoji level
@@ -55,7 +57,9 @@ export function CheckInScreen({ route, navigation }: Props) {
   const { placeId, name } = route.params;
   const { coords } = useLocation();
   const { venues, updateVenueScore } = useVibeStore();
+  const reduceMotion = useReduceMotion();
   const [mode, setMode] = useState<Mode>("listen");
+  const [micPerm, setMicPerm] = useState<MicPerm>("undetermined");
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [countdown, setCountdown] = useState(RECORD_SECONDS);
   const [signals, setSignals] = useState<AudioSignals | null>(null);
@@ -63,7 +67,50 @@ export function CheckInScreen({ route, navigation }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [gate, setGate] = useState<{ text: string } | null>(null);
   const [result, setResult] = useState<{ score: number; badge: string | null } | null>(null);
+
+  // Resolve the current mic permission once, up front. If it's already denied,
+  // open straight into RATE mode so there's never a dead mic button.
+  useEffect(() => {
+    AudioModule.getRecordingPermissionsAsync()
+      .then((s) => {
+        const p: MicPerm = s.granted ? "granted" : s.canAskAgain ? "undetermined" : "denied";
+        setMicPerm(p);
+        if (p === "denied") setMode("manual");
+      })
+      .catch(() => setMicPerm("undetermined"));
+  }, []);
+
+  // Ask the server whether a check-in would be accepted right now (rate limit /
+  // geo-fence), so we can show the gate before recording or rating.
+  useEffect(() => {
+    let cancelled = false;
+    precheckVibe(placeId, coords.lat, coords.lng)
+      .then((pc) => {
+        if (cancelled || pc.can_check_in) {
+          if (!cancelled) setGate(null);
+          return;
+        }
+        if (pc.reason === "rate_limit") {
+          const mins = Math.max(1, Math.round((pc.retry_after_seconds ?? 3600) / 60));
+          setGate({
+            text: `You've used both check-ins for this venue this hour. Try again in about ${mins} min.`,
+          });
+        } else if (pc.reason === "too_far") {
+          const away = pc.distance_m ? `${Math.round(pc.distance_m)} m away` : "too far away";
+          const within = pc.radius_m ? ` Get within ${Math.round(pc.radius_m)} m to check in.` : "";
+          setGate({ text: `You're ${away}.${within}` });
+        }
+      })
+      .catch(() => {
+        /* precheck is best-effort; submit still enforces the rules */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [placeId, coords.lat, coords.lng]);
 
   // Result score count-up
   const [displayScore, setDisplayScore] = useState(0);
@@ -125,6 +172,7 @@ export function CheckInScreen({ route, navigation }: Props) {
 
   function startRings(fast = false) {
     resetRings();
+    if (reduceMotion) return; // hold the halo static when Reduce Motion is on
     const dur = fast ? 900 : 1600;
     ringLoop.current = Animated.parallel([
       makeRingAnim(ring1Scale, ring1Opacity, 0,          dur),
@@ -139,11 +187,30 @@ export function CheckInScreen({ route, navigation }: Props) {
     resetRings();
   }
 
-  async function startRecording() {
+  // Called from the permission primer's "Allow microphone" button — fires the
+  // OS prompt, then either records or drops to manual rating.
+  async function requestMic() {
     try {
       const status = await AudioModule.requestRecordingPermissionsAsync();
+      if (status.granted) {
+        setMicPerm("granted");
+        startRecording();
+      } else {
+        const canAsk = status.canAskAgain;
+        setMicPerm(canAsk ? "undetermined" : "denied");
+        if (!canAsk) setMode("manual");
+      }
+    } catch {
+      setMicPerm("denied");
+      setMode("manual");
+    }
+  }
+
+  async function startRecording() {
+    try {
+      const status = await AudioModule.getRecordingPermissionsAsync();
       if (!status.granted) {
-        Alert.alert("Permission denied", "Microphone access is needed to score the vibe.");
+        setMicPerm(status.canAskAgain ? "undetermined" : "denied");
         return;
       }
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
@@ -164,7 +231,7 @@ export function CheckInScreen({ route, navigation }: Props) {
       }, 1000);
     } catch (e: any) {
       setRecordState("idle");
-      Alert.alert("Recording error", e.message ?? "Could not start recording");
+      setAnalyseError(e.message ?? "Could not start recording");
     }
   }
 
@@ -190,6 +257,7 @@ export function CheckInScreen({ route, navigation }: Props) {
 
   async function handleSubmit() {
     setSubmitting(true);
+    setSubmitError(null);
     try {
       let payload: Parameters<typeof submitVibe>[0];
       if (mode === "listen" && signals) {
@@ -205,9 +273,15 @@ export function CheckInScreen({ route, navigation }: Props) {
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       const s = e.status;
-      if (s === 429) Alert.alert("Slow down!", "You've already checked in here recently.");
-      else if (s === 403) Alert.alert("Too far away", "You need to be at the venue to check in.");
-      else Alert.alert("Error", e.message ?? "Check-in failed");
+      if (s === 429) {
+        setGate({ text: "You've used both check-ins for this venue this hour. Try again a bit later." });
+        setSubmitError("Check-in limit reached for this venue.");
+      } else if (s === 403) {
+        setGate({ text: "You need to be at the venue to check in." });
+        setSubmitError("You're too far from the venue.");
+      } else {
+        setSubmitError(e.message ?? "Check-in failed — try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -216,6 +290,11 @@ export function CheckInScreen({ route, navigation }: Props) {
   // Trigger result animations
   useEffect(() => {
     if (!result) return;
+    if (reduceMotion) {
+      setDisplayScore(Math.round(result.score));
+      if (result.badge) badgeTranslate.setValue(0);
+      return;
+    }
     scoreAnim.setValue(0);
     const id = scoreAnim.addListener(({ value }) => setDisplayScore(Math.round(value)));
     Animated.timing(scoreAnim, { toValue: result.score, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
@@ -263,7 +342,7 @@ export function CheckInScreen({ route, navigation }: Props) {
     );
   }
 
-  const canSubmit = !submitting &&
+  const canSubmit = !submitting && !gate &&
     !(mode === "listen" && recordState !== "done") &&
     !(mode === "manual" && selected == null);
 
@@ -271,6 +350,13 @@ export function CheckInScreen({ route, navigation }: Props) {
     <View style={styles.container}>
       {/* Venue + current vibe context */}
       <Text style={styles.venueName}>{name}</Text>
+
+      {gate && (
+        <View style={styles.gateBanner} accessibilityRole="alert">
+          <Text style={styles.gateBannerIcon}>⏳</Text>
+          <Text style={styles.gateBannerText}>{gate.text}</Text>
+        </View>
+      )}
 
       {/* ── Mode selector ── */}
       <Text style={styles.modeRowLabel}>HOW DO YOU WANT TO CHECK IN?</Text>
@@ -310,13 +396,26 @@ export function CheckInScreen({ route, navigation }: Props) {
       {/* ── Listen mode ── */}
       {mode === "listen" && (
         <View style={styles.listenArea}>
-          {recordState === "idle" && (
+          {recordState === "idle" && micPerm !== "granted" && (
+            <PermissionPrimer
+              state={micPerm === "denied" ? "denied" : "prompt"}
+              onAllow={requestMic}
+              onRateManually={() => setMode("manual")}
+            />
+          )}
+
+          {recordState === "idle" && micPerm === "granted" && (
             <>
               <Text style={styles.instruction}>
                 Tap to scan{"\n"}10 seconds of ambient sound
               </Text>
               {analyseError && <Text style={styles.errorText}>{analyseError}</Text>}
-              <TouchableOpacity onPress={startRecording} style={styles.micWrap}>
+              <TouchableOpacity
+                onPress={startRecording}
+                style={styles.micWrap}
+                accessibilityRole="button"
+                accessibilityLabel="Start 10-second vibe scan"
+              >
                 <LinearGradient colors={[C.teal, C.tealDim]} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={styles.micBtn}>
                   <Text style={styles.micIcon}>🎤</Text>
                 </LinearGradient>
@@ -381,9 +480,13 @@ export function CheckInScreen({ route, navigation }: Props) {
               return (
                 <TouchableOpacity
                   key={opt.value}
+                  accessibilityRole="button"
+                  accessibilityLabel={opt.a11y}
+                  accessibilityState={{ selected: active }}
                   onPress={() => {
                     setSelected(opt.value);
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    if (reduceMotion) return;
                     Animated.sequence([
                       Animated.timing(emojiBounce[i], { toValue: 1.22, duration: 100, useNativeDriver: true }),
                       Animated.spring(emojiBounce[i], { toValue: 1, useNativeDriver: true }),
@@ -431,6 +534,7 @@ export function CheckInScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {/* ── Submit ── */}
+      {submitError && <Text style={styles.submitError}>{submitError}</Text>}
       <TouchableOpacity onPress={handleSubmit} disabled={!canSubmit}>
         {canSubmit ? (
           <LinearGradient colors={[C.teal, C.tealDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.submitBtn}>
@@ -438,7 +542,9 @@ export function CheckInScreen({ route, navigation }: Props) {
           </LinearGradient>
         ) : (
           <View style={[styles.submitBtn, styles.submitDisabled]}>
-            <Text style={[styles.submitText, { color: C.textMuted }]}>Submit Vibe</Text>
+            <Text style={[styles.submitText, { color: C.textFaint }]}>
+              {gate ? "Check-in unavailable" : "Submit Vibe"}
+            </Text>
           </View>
         )}
       </TouchableOpacity>
@@ -477,6 +583,17 @@ const styles = StyleSheet.create({
     alignItems: "center", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32,
   },
   venueName: { color: C.textPrimary, fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 20 },
+
+  gateBanner: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: withAlpha(C.buzzing, 0.12),
+    borderWidth: 1, borderColor: withAlpha(C.buzzing, 0.5),
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    width: "100%", marginBottom: 16,
+  },
+  gateBannerIcon: { fontSize: 18 },
+  gateBannerText: { color: C.textPrimary, fontSize: 13, flex: 1, lineHeight: 18 },
+  submitError: { color: C.raging, fontSize: 13, textAlign: "center", marginBottom: 10 },
 
   modeRowLabel: { color: C.textMuted, fontSize: 12, fontWeight: "600", letterSpacing: 0.5, marginBottom: 8, width: "100%" },
   modeRow: { flexDirection: "row", gap: 10, width: "100%", marginBottom: 24 },

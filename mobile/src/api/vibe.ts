@@ -30,6 +30,21 @@ export function submitVibe(req: SubmitVibeRequest): Promise<SubmitVibeResponse> 
   return api.post<SubmitVibeResponse>("/v1/vibe", req);
 }
 
+export interface VibePrecheck {
+  can_check_in: boolean;
+  reason?: "rate_limit" | "too_far";
+  limit?: number;
+  retry_after_seconds?: number;
+  distance_m?: number;
+  radius_m?: number;
+}
+
+/** Ask the server whether a check-in would be accepted right now, so the
+ *  screen can show the gate before the user records or rates. */
+export function precheckVibe(placeId: string, lat: number, lng: number): Promise<VibePrecheck> {
+  return api.get<VibePrecheck>(`/v1/vibe/${placeId}/precheck?lat=${lat}&lng=${lng}`);
+}
+
 /** POST the recorded audio file to the backend YAMNet proxy, get back the
  *  three vibe signals. Audio is processed in-memory server-side and discarded. */
 export async function analyseAudio(fileUri: string): Promise<AudioSignals> {

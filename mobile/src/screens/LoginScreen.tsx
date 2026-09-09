@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import {
@@ -11,7 +11,14 @@ import {
   GoogleSigninButton,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import { GoogleAuthProvider, signInWithCredential, onAuthStateChanged } from "firebase/auth";
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
+import {
+  GoogleAuthProvider,
+  OAuthProvider,
+  signInWithCredential,
+  onAuthStateChanged,
+} from "firebase/auth";
 import { auth } from "../config/firebase";
 import { useAuthStore } from "../store/useAuthStore";
 
@@ -27,6 +34,7 @@ export function LoginScreen() {
   const { setUser } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [appleAvailable, setAppleAvailable] = useState(false);
 
   // Restore existing session
   useEffect(() => {
@@ -37,6 +45,12 @@ export function LoginScreen() {
       }
     });
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === "ios") {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+    }
   }, []);
 
   async function handleGoogleSignIn() {
@@ -69,6 +83,50 @@ export function LoginScreen() {
     }
   }
 
+  async function handleAppleSignIn() {
+    setLoading(true);
+    setError(null);
+    try {
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
+
+      const appleCredential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      });
+
+      const { identityToken, fullName } = appleCredential;
+      if (!identityToken) {
+        setError("Apple didn't return an identity token");
+        return;
+      }
+
+      const provider = new OAuthProvider("apple.com");
+      const firebaseCred = provider.credential({ idToken: identityToken, rawNonce });
+      const result = await signInWithCredential(auth, firebaseCred);
+
+      // Apple only sends the name on the very first authorization.
+      const appleName = [fullName?.givenName, fullName?.familyName].filter(Boolean).join(" ");
+      const displayName = result.user.displayName ?? (appleName || null);
+      const token = await result.user.getIdToken();
+      setUser(result.user.uid, token, displayName, result.user.photoURL);
+    } catch (e: any) {
+      if (e.code === "ERR_REQUEST_CANCELED") {
+        // user cancelled
+      } else {
+        setError(e.message ?? "Apple sign-in failed");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.logo}>🎵</Text>
@@ -80,12 +138,23 @@ export function LoginScreen() {
       {loading ? (
         <ActivityIndicator color="#14b8a6" size="large" style={{ marginTop: 40 }} />
       ) : (
-        <GoogleSigninButton
-          style={styles.googleBtn}
-          size={GoogleSigninButton.Size.Wide}
-          color={GoogleSigninButton.Color.Dark}
-          onPress={handleGoogleSignIn}
-        />
+        <View style={styles.buttons}>
+          {appleAvailable && (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+              cornerRadius={8}
+              style={styles.appleBtn}
+              onPress={handleAppleSignIn}
+            />
+          )}
+          <GoogleSigninButton
+            style={styles.googleBtn}
+            size={GoogleSigninButton.Size.Wide}
+            color={GoogleSigninButton.Color.Dark}
+            onPress={handleGoogleSignIn}
+          />
+        </View>
       )}
     </View>
   );
@@ -101,7 +170,9 @@ const styles = StyleSheet.create({
   },
   logo: { fontSize: 64, marginBottom: 16 },
   title: { color: "#fff", fontSize: 32, fontWeight: "800", letterSpacing: 1 },
-  subtitle: { color: "#555", fontSize: 15, marginTop: 8, marginBottom: 48 },
+  subtitle: { color: "#8A82A8", fontSize: 15, marginTop: 8, marginBottom: 48 },
   error: { color: "#ef4444", fontSize: 13, textAlign: "center", marginBottom: 16 },
-  googleBtn: { width: 240, height: 56, marginTop: 8 },
+  buttons: { alignItems: "center", gap: 14 },
+  appleBtn: { width: 240, height: 48 },
+  googleBtn: { width: 240, height: 56 },
 });

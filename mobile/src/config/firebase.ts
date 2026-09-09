@@ -1,4 +1,7 @@
 import { initializeApp } from "firebase/app";
+// getReactNativePersistence is a valid runtime export of firebase/auth but is
+// missing from the type definitions in some firebase@12 builds.
+// @ts-expect-error -- runtime export not present in the shipped .d.ts
 import { initializeAuth, getReactNativePersistence } from "firebase/auth";
 import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 

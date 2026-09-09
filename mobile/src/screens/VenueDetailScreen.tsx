@@ -17,7 +17,8 @@ import {
   followVenue, unfollowVenue, VenueDetail, VibeSummary,
 } from "../api/places";
 import { VenueSocket, ScoreUpdateEvent } from "../api/websocket";
-import { confidenceBadge } from "../components/VibeBadge";
+import { ConfidenceBadge } from "../components/ConfidenceBadge";
+import { ReportSheet } from "../components/ReportSheet";
 import { useVibeStore } from "../store/useVibeStore";
 import { RootStackParamList } from "../../App";
 import { C, vibeColor, vibeGradient, withAlpha } from "../theme";
@@ -57,8 +58,25 @@ export function VenueDetailScreen({ route, navigation }: Props) {
   const [summary, setSummary] = useState<VibeSummary | null>(null);
   const [following, setFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   const socketRef = useRef<VenueSocket | null>(null);
   const { updateVenueScore } = useVibeStore();
+
+  // Overflow menu → report entry point (guideline 1.2).
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => setReportVisible(true)}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Report this venue"
+        >
+          <Text style={{ color: C.textSecondary, fontSize: 22, paddingHorizontal: 4 }}>⋯</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,7 +137,6 @@ export function VenueDetailScreen({ route, navigation }: Props) {
 
   const color = vibeColor(venue.vibe_score);
   const grad = vibeGradient(venue.vibe_score);
-  const cbadge = confidenceBadge(venue.confidence, venue.check_in_count);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 52 }}>
@@ -140,11 +157,7 @@ export function VenueDetailScreen({ route, navigation }: Props) {
 
         {/* Confidence + check-in row */}
         <View style={styles.metaRow}>
-          {cbadge !== "" && (
-            <View style={[styles.metaChip, { borderColor: color }]}>
-              <Text style={[styles.metaChipText, { color }]}>{cbadge}</Text>
-            </View>
-          )}
+          <ConfidenceBadge confidence={venue.confidence} />
           <Text style={styles.checkInCount}>
             {venue.check_in_count} check-in{venue.check_in_count !== 1 ? "s" : ""} · last 3 hours
           </Text>
@@ -243,6 +256,21 @@ export function VenueDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* ── Report entry (also in the header ⋯ menu) ── */}
+      <TouchableOpacity
+        style={styles.reportLink}
+        onPress={() => setReportVisible(true)}
+        accessibilityRole="button"
+      >
+        <Text style={styles.reportLinkText}>Something wrong with this venue? Report it</Text>
+      </TouchableOpacity>
+
+      <ReportSheet
+        visible={reportVisible}
+        placeId={placeId}
+        onClose={() => setReportVisible(false)}
+      />
+
       {/* ── Score history ── */}
       {venue.history.length > 0 && (
         <View style={styles.section}>
@@ -340,4 +368,7 @@ const styles = StyleSheet.create({
   errorText: { color: C.raging, fontSize: 14 },
   retryBtn: { borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8, borderWidth: 1, borderColor: C.teal },
   retryText: { color: C.teal, fontWeight: "600" },
+
+  reportLink: { alignItems: "center", marginTop: 24, paddingHorizontal: 20 },
+  reportLinkText: { color: C.textSecondary, fontSize: 13, textDecorationLine: "underline" },
 });

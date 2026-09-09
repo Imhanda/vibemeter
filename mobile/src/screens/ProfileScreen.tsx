@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +15,8 @@ import { signOut } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { useAuthStore } from "../store/useAuthStore";
 import { getUserProfile, UserProfile } from "../api/user";
+import { deleteAccount } from "../api/account";
+import { LEGAL_URLS } from "../config";
 import { C, withAlpha } from "../theme";
 
 const BADGE_LABELS: Record<string, string> = {
@@ -48,6 +51,7 @@ export function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const firebaseUser = auth.currentUser;
 
   const load = async () => {
@@ -64,6 +68,35 @@ export function ProfileScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Sign Out", style: "destructive", onPress: async () => { await signOut(auth); clearUser(); } },
     ]);
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      "Delete account",
+      "This permanently deletes your VibeMeter account. Your past check-ins stay but are anonymised so venue scores don't change. Everything that identifies you is removed, and fully purged from backups within 30 days. This can't be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: confirmDelete },
+      ],
+    );
+  }
+
+  async function confirmDelete() {
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      clearUser();
+    } catch (e: any) {
+      setDeleting(false);
+      if (e?.code === "auth/requires-recent-login") {
+        Alert.alert(
+          "Sign in again first",
+          "For your security, sign out and back in, then delete your account.",
+        );
+      } else {
+        Alert.alert("Couldn't delete account", e?.message ?? "Please try again in a moment.");
+      }
+    }
   }
 
   if (loading) return <View style={s.center}><ActivityIndicator color={C.teal} size="large" /></View>;
@@ -140,11 +173,45 @@ export function ProfileScreen() {
         )
       }
 
+      {/* ── Account & Data ── */}
+      <Text style={[s.sectionTitle, { marginTop: 28 }]}>Account & Data</Text>
+      <View style={s.legalCard}>
+        <LegalRow label="Privacy Policy" onPress={() => Linking.openURL(LEGAL_URLS.privacy)} />
+        <View style={s.legalDivider} />
+        <LegalRow label="Terms of Service" onPress={() => Linking.openURL(LEGAL_URLS.terms)} />
+        <View style={s.legalDivider} />
+        <LegalRow label="Community Guidelines" onPress={() => Linking.openURL(LEGAL_URLS.communityGuidelines)} />
+      </View>
+
+      <TouchableOpacity
+        style={s.deleteBtn}
+        onPress={handleDeleteAccount}
+        disabled={deleting}
+        accessibilityRole="button"
+        accessibilityLabel="Delete account"
+      >
+        {deleting
+          ? <ActivityIndicator color={C.raging} />
+          : <Text style={s.deleteText}>Delete Account</Text>}
+      </TouchableOpacity>
+      <Text style={s.deleteHint}>
+        Removes your account and personal data. Check-ins are kept anonymously.
+      </Text>
+
       {/* ── Sign out ── */}
       <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}>
         <Text style={s.signOutText}>Sign Out</Text>
       </TouchableOpacity>
     </ScrollView>
+  );
+}
+
+function LegalRow({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={s.legalRow} onPress={onPress} accessibilityRole="link">
+      <Text style={s.legalRowText}>{label}</Text>
+      <Text style={s.legalRowChevron}>›</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -207,11 +274,30 @@ const s = StyleSheet.create({
   emptyTitle: { color: C.textSecondary, fontSize: 15, fontWeight: "700" },
   emptyText:  { color: C.textMuted, fontSize: 13 },
 
-  signOutBtn: {
-    marginTop: 28, borderRadius: 14, paddingVertical: 14,
+  legalCard: {
+    backgroundColor: C.bgSurface, borderRadius: 14,
+    borderWidth: 1, borderColor: C.border, overflow: "hidden",
+  },
+  legalRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  legalRowText: { color: C.textPrimary, fontSize: 14 },
+  legalRowChevron: { color: C.textSecondary, fontSize: 18 },
+  legalDivider: { height: 1, backgroundColor: C.border, marginLeft: 16 },
+
+  deleteBtn: {
+    marginTop: 16, borderRadius: 14, paddingVertical: 14,
     alignItems: "center", borderWidth: 1, borderColor: withAlpha(C.raging, 0.5),
   },
-  signOutText: { color: C.raging, fontSize: 15, fontWeight: "700" },
+  deleteText: { color: C.raging, fontSize: 15, fontWeight: "700" },
+  deleteHint: { color: C.textSecondary, fontSize: 11, textAlign: "center", marginTop: 6 },
+
+  signOutBtn: {
+    marginTop: 20, borderRadius: 14, paddingVertical: 14,
+    alignItems: "center", borderWidth: 1, borderColor: C.border,
+  },
+  signOutText: { color: C.textSecondary, fontSize: 15, fontWeight: "700" },
 
   errorText: { color: C.raging, fontSize: 14 },
   retryBtn: { borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8, borderWidth: 1, borderColor: C.teal },
