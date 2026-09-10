@@ -14,6 +14,11 @@ import (
 func GetUserProfile(c *gin.Context) {
 	userID := c.GetString(middleware.UserIDKey)
 
+	// Provision the row on first access — a freshly signed-in account has no
+	// users row until its first check-in or follow, and the profile screen is
+	// often the first thing opened.
+	_, _ = db.DB.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, userID)
+
 	var user models.User
 	if err := db.DB.Get(&user, `
 		SELECT id, COALESCE(display_name,'') AS display_name,
