@@ -48,7 +48,11 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "VibeMeter uses your location to list venues near you and to confirm you're at a venue when you submit a vibe check-in."
+          "locationWhenInUsePermission": "VibeMeter uses your location to list venues near you and to confirm you're at a venue when you submit a vibe check-in.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
         }
       ]
     ]
