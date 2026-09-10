@@ -21,9 +21,10 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "VibeMeter records about 10 seconds of ambient sound when you tap Check In, sends it over HTTPS to our server to measure crowd noise and music energy, and discards it right after — the recording is never saved on your device or ours.",
+        "NSMicrophoneUsageDescription": "VibeMeter records about 10 seconds of ambient sound when you tap Check In, sends it over HTTPS to our server to measure crowd noise and music energy, and discards it right after \u2014 the recording is never saved on your device or ours.",
         "NSLocationWhenInUseUsageDescription": "VibeMeter uses your location to list venues near you and to confirm you're at a venue when you submit a vibe check-in."
-      }
+      },
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {

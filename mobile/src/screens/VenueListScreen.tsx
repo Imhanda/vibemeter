@@ -76,7 +76,7 @@ function SkeletonCard() {
 
 export function VenueListScreen({ navigation }: Props) {
   const { venues, setVenues } = useVibeStore();
-  const { coords, loading: locationLoading, usingGPS } = useLocation();
+  const { coords, loading: locationLoading, usingGPS, placeName } = useLocation();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,8 +187,8 @@ export function VenueListScreen({ navigation }: Props) {
         <View style={styles.headerTop}>
           <Text style={styles.logoText}>VIBEMETER</Text>
           <TouchableOpacity style={styles.locationChip} onPress={() => {}}>
-            <Text style={styles.locationChipText}>
-              📍 {usingGPS ? "Your location" : "Bengaluru"}
+            <Text style={styles.locationChipText} numberOfLines={1}>
+              📍 {placeName ?? (usingGPS ? "Your location" : "Bengaluru")}
             </Text>
           </TouchableOpacity>
         </View>
