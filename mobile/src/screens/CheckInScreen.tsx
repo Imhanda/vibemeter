@@ -71,14 +71,18 @@ export function CheckInScreen({ route, navigation }: Props) {
   const [gate, setGate] = useState<{ text: string } | null>(null);
   const [result, setResult] = useState<{ score: number; badge: string | null } | null>(null);
 
-  // Resolve the current mic permission once, up front. If it's already denied,
-  // open straight into RATE mode so there's never a dead mic button.
+  // Resolve the current mic permission once, up front. Stay on the AUTO tab
+  // regardless of status: PermissionPrimer's "prompt" state asks for access,
+  // and its "denied" state explains why it's off and links to Settings — so
+  // "Check the Vibe" always surfaces the permission, rather than silently
+  // dropping straight into manual rating with no mic mention at all. Manual
+  // rating is still one tap away from either state, so there's never a dead
+  // mic button.
   useEffect(() => {
     AudioModule.getRecordingPermissionsAsync()
       .then((s) => {
         const p: MicPerm = s.granted ? "granted" : s.canAskAgain ? "undetermined" : "denied";
         setMicPerm(p);
-        if (p === "denied") setMode("manual");
       })
       .catch(() => setMicPerm("undetermined"));
   }, []);
@@ -188,7 +192,8 @@ export function CheckInScreen({ route, navigation }: Props) {
   }
 
   // Called from the permission primer's "Allow microphone" button — fires the
-  // OS prompt, then either records or drops to manual rating.
+  // OS prompt, then either records or falls back to the primer's "denied"
+  // state (mic-off explainer + Open Settings), never straight to manual.
   async function requestMic() {
     try {
       const status = await AudioModule.requestRecordingPermissionsAsync();
@@ -198,11 +203,9 @@ export function CheckInScreen({ route, navigation }: Props) {
       } else {
         const canAsk = status.canAskAgain;
         setMicPerm(canAsk ? "undetermined" : "denied");
-        if (!canAsk) setMode("manual");
       }
     } catch {
       setMicPerm("denied");
-      setMode("manual");
     }
   }
 

@@ -17,7 +17,7 @@ they are spelled out here.
 | No `NSLocationAlwaysAndWhenInUse` | confirmed absent |
 | Blanket `NSAllowsArbitraryLoads` removed | see §8 — API must now serve valid TLS |
 | Pre-permission primer (pre-prompt + denied states, "rate manually", Open Settings) | `mobile/src/components/PermissionPrimer.tsx`, wired in `CheckInScreen` |
-| Denied → opens in RATE mode, mic path hidden | `CheckInScreen` `micPerm` gate |
+| "Check the Vibe" always surfaces the mic permission (prompt to allow, or denied explainer + Open Settings) instead of silently dropping to RATE mode | `CheckInScreen` `micPerm` gate — AUTO tab stays default regardless of status |
 
 **Console:** nothing. The strings ship in the binary.
 

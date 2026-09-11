@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   FlatList,
+  Linking,
   Modal,
   RefreshControl,
   ScrollView,
@@ -76,7 +78,7 @@ function SkeletonCard() {
 
 export function VenueListScreen({ navigation }: Props) {
   const { venues, setVenues } = useVibeStore();
-  const { coords, loading: locationLoading, usingGPS, placeName } = useLocation();
+  const { coords, loading: locationLoading, usingGPS, placeName, requestLocation } = useLocation();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +167,23 @@ export function VenueListScreen({ navigation }: Props) {
     );
   }
 
+  // Tapping the location chip should always do *something*: if permission
+  // was never asked, this triggers the OS prompt; if it was already denied,
+  // the OS won't re-prompt, so fall back to sending the user to Settings.
+  async function handleLocationChipPress() {
+    const granted = await requestLocation();
+    if (!granted) {
+      Alert.alert(
+        "Location access needed",
+        "VibeMeter uses your location to show venues near you. Enable location access in Settings to use your current location.",
+        [
+          { text: "Not now", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
+  }
+
   useEffect(() => {
     if (!locationLoading) load();
   }, [locationLoading, load]);
@@ -186,7 +205,7 @@ export function VenueListScreen({ navigation }: Props) {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.logoText}>VIBEMETER</Text>
-          <TouchableOpacity style={styles.locationChip} onPress={() => {}}>
+          <TouchableOpacity style={styles.locationChip} onPress={handleLocationChipPress}>
             <Text style={styles.locationChipText} numberOfLines={1}>
               📍 {placeName ?? (usingGPS ? "Your location" : "Bengaluru")}
             </Text>
