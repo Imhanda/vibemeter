@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   getVenueDetail, getVibeSummary, getFollowStatus,
@@ -119,7 +120,15 @@ export function VenueDetailScreen({ route, navigation }: Props) {
     return () => sock.disconnect();
   }, [placeId, updateVenueScore]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refetch whenever this screen regains focus — not just on first mount —
+  // so a check-in submitted on CheckInScreen (which updates the venue-list
+  // store, not this screen's local state) shows up as soon as you come back
+  // instead of waiting on a WebSocket push that may lag or never arrive.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={C.teal} size="large" /></View>;
