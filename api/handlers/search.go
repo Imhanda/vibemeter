@@ -46,6 +46,40 @@ func SearchPlaces(c *gin.Context) {
 
 	// Query DB
 	var rows []models.NearbyResult
+	nameMatchIDs := make(map[string]bool)
+	trimmedQuery := strings.TrimSpace(req.Query)
+	if trimmedQuery != "" {
+		// A literal venue-name search must work regardless of the semantic
+		// filter's narrow proximity radius (1.5-3km) and regardless of
+		// whether ANTHROPIC_API_KEY is even configured — Claude extraction
+		// only ever produced a type/keyword *boost*, never an actual name
+		// match, so searching for a venue by its own name previously found
+		// it only by coincidence (if it happened to already be nearby).
+		const nameSearchRadiusM = 50000.0
+		const nameQ = `
+			SELECT id, name, COALESCE(type,'') AS type, lat, lng,
+			       COALESCE(photo_url,'') AS photo_url, google_rating,
+			       ST_Distance(
+			           location::geography,
+			           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
+			       ) AS distance_m
+			FROM places
+			WHERE name ILIKE '%' || $4 || '%'
+			  AND ST_DWithin(
+			          location::geography,
+			          ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
+			          $3
+			      )
+			ORDER BY distance_m LIMIT 50`
+		var nameRows []models.NearbyResult
+		if err := db.DB.Select(&nameRows, nameQ, req.Lat, req.Lng, nameSearchRadiusM, trimmedQuery); err == nil {
+			for _, nr := range nameRows {
+				nameMatchIDs[nr.ID] = true
+			}
+			rows = append(rows, nameRows...)
+		}
+	}
+	var proximityRows []models.NearbyResult
 	if filters.Type != "" {
 		const q = `
 			SELECT id, name, COALESCE(type,'') AS type, lat, lng,
@@ -62,7 +96,7 @@ func SearchPlaces(c *gin.Context) {
 			      )
 			  AND type = $4
 			ORDER BY distance_m LIMIT 100`
-		db.DB.Select(&rows, q, req.Lat, req.Lng, req.Radius, filters.Type)
+		db.DB.Select(&proximityRows, q, req.Lat, req.Lng, req.Radius, filters.Type)
 	} else {
 		const q = `
 			SELECT id, name, COALESCE(type,'') AS type, lat, lng,
@@ -78,18 +112,26 @@ func SearchPlaces(c *gin.Context) {
 			          $3
 			      )
 			ORDER BY distance_m LIMIT 100`
-		db.DB.Select(&rows, q, req.Lat, req.Lng, req.Radius)
+		db.DB.Select(&proximityRows, q, req.Lat, req.Lng, req.Radius)
+	}
+	// Merge, de-duping venues the name search already picked up.
+	for _, pr := range proximityRows {
+		if !nameMatchIDs[pr.ID] {
+			rows = append(rows, pr)
+		}
 	}
 
 	// Enrich with Redis scores and apply min_score filter
 	type scoredResult struct {
-		resp      nearbyPlaceResponse
-		vibeScore float64
-		relevance float64 // keyword match boost
+		resp        nearbyPlaceResponse
+		vibeScore   float64
+		relevance   float64 // keyword match boost
+		isNameMatch bool    // query matched this venue's name directly
 	}
 
 	var results []scoredResult
 	for _, row := range rows {
+		isNameMatch := nameMatchIDs[row.ID]
 		resp := nearbyPlaceResponse{
 			PlaceID:   row.ID,
 			Name:      row.Name,
@@ -100,7 +142,9 @@ func SearchPlaces(c *gin.Context) {
 
 		vibeScore := 0.0
 		if vs, err := cache.GetVenueScoreOrFallback(c.Request.Context(), row.ID, row.GoogleRating); err == nil && vs != nil {
-			if vs.Score < filters.MinScore {
+			// A venue the query matched by name is what the user asked for —
+			// don't let an incidental min_score extraction hide it.
+			if vs.Score < filters.MinScore && !isNameMatch {
 				continue
 			}
 			vibeScore = vs.Score
@@ -109,7 +153,7 @@ func SearchPlaces(c *gin.Context) {
 			resp.CheckInCount = vs.CheckInCount
 			resp.ScoreSource = vs.Source
 			resp.LastUpdated = vs.LastUpdated.Format("2006-01-02T15:04:05Z")
-		} else if filters.MinScore > 0 {
+		} else if filters.MinScore > 0 && !isNameMatch {
 			continue
 		}
 
@@ -122,13 +166,22 @@ func SearchPlaces(c *gin.Context) {
 			}
 		}
 
-		results = append(results, scoredResult{resp, vibeScore, relevance})
+		results = append(results, scoredResult{resp, vibeScore, relevance, isNameMatch})
 	}
 
-	// Sort: venues with scores ranked by (vibe_score * relevance), unscored by relevance then distance
+	// Sort: a direct name match always outranks everything else (that's what
+	// the user typed and asked to find); within each tier, by
+	// (vibe_score * relevance), unscored falling back to relevance then distance.
 	for i := 1; i < len(results); i++ {
 		for j := i; j > 0; j-- {
 			a, b := results[j-1], results[j]
+			if a.isNameMatch != b.isNameMatch {
+				if b.isNameMatch {
+					results[j-1], results[j] = results[j], results[j-1]
+					continue
+				}
+				break
+			}
 			scoreA := a.vibeScore * a.relevance
 			scoreB := b.vibeScore * b.relevance
 			if scoreB > scoreA {
