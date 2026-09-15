@@ -47,6 +47,11 @@ func SearchPlaces(c *gin.Context) {
 	// Query DB
 	var rows []models.NearbyResult
 	nameMatchIDs := make(map[string]bool)
+	// Types among the matched venue(s) — e.g. if the match is a bar, other
+	// bars in the area rank as "related" above unrelated venues that only
+	// beat them on score. Usually one type; a query matching several
+	// same-name branches of different types produces more than one.
+	matchedTypes := make(map[string]bool)
 	trimmedQuery := strings.TrimSpace(req.Query)
 	if trimmedQuery != "" {
 		// A literal venue-name search must work regardless of the semantic
@@ -75,6 +80,9 @@ func SearchPlaces(c *gin.Context) {
 		if err := db.DB.Select(&nameRows, nameQ, req.Lat, req.Lng, nameSearchRadiusM, trimmedQuery); err == nil {
 			for _, nr := range nameRows {
 				nameMatchIDs[nr.ID] = true
+				if nr.Type != "" {
+					matchedTypes[nr.Type] = true
+				}
 			}
 			rows = append(rows, nameRows...)
 		}
@@ -127,6 +135,7 @@ func SearchPlaces(c *gin.Context) {
 		vibeScore   float64
 		relevance   float64 // keyword match boost
 		isNameMatch bool    // query matched this venue's name directly
+		sameType    bool    // not a name match, but same type as one that was
 	}
 
 	var results []scoredResult
@@ -166,17 +175,28 @@ func SearchPlaces(c *gin.Context) {
 			}
 		}
 
-		results = append(results, scoredResult{resp, vibeScore, relevance, isNameMatch})
+		sameType := !isNameMatch && matchedTypes[row.Type]
+
+		results = append(results, scoredResult{resp, vibeScore, relevance, isNameMatch, sameType})
 	}
 
-	// Sort: a direct name match always outranks everything else (that's what
-	// the user typed and asked to find); within each tier, by
-	// (vibe_score * relevance), unscored falling back to relevance then distance.
+	// Sort in three tiers: (1) a direct name match always outranks everything
+	// else — that's what the user typed and asked to find; (2) among the
+	// rest, venues of the same type as the match(es) ("related") outrank
+	// venues of a different type; (3) within each tier, by
+	// (vibe_score * relevance).
 	for i := 1; i < len(results); i++ {
 		for j := i; j > 0; j-- {
 			a, b := results[j-1], results[j]
 			if a.isNameMatch != b.isNameMatch {
 				if b.isNameMatch {
+					results[j-1], results[j] = results[j], results[j-1]
+					continue
+				}
+				break
+			}
+			if a.sameType != b.sameType {
+				if b.sameType {
 					results[j-1], results[j] = results[j], results[j-1]
 					continue
 				}
