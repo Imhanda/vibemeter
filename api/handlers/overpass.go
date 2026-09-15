@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -30,9 +31,21 @@ type overpassResp struct {
 
 var overpassClient = &http.Client{Timeout: 20 * time.Second}
 
+// Overpass query time/size grows with the *area*, not the radius, so the
+// nearby endpoint's user-facing radius (up to 50km) is unusable here — around
+// a dense downtown that's tens of thousands of amenity nodes, which blows
+// past the server's own [timeout:15] and comes back with zero usable
+// elements (silently, since the outer request still succeeds with an empty
+// places table). Cap the seed fetch to a small radius: enough to bootstrap
+// an unseeded area without timing out anywhere, including a dense city core.
+const overpassSeedRadiusCapM = 2000.0
+
 // seedFromOverpass queries OpenStreetMap for nightlife/dining venues near a
 // location and upserts them into the places table.
 func seedFromOverpass(lat, lng, radius float64) {
+	if radius > overpassSeedRadiusCapM {
+		radius = overpassSeedRadiusCapM
+	}
 	// nwr = node/way/relation so building-footprint venues (ways) are included.
 	// out center returns a center point for ways/relations instead of no coords.
 	query := fmt.Sprintf(
@@ -46,14 +59,27 @@ func seedFromOverpass(lat, lng, radius float64) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		log.Printf("overpass: non-200 status %d near (%.4f, %.4f): %s", resp.StatusCode, lat, lng, body)
+		return
+	}
+
 	var result overpassResp
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Printf("overpass: decode error: %v", err)
 		return
 	}
+	// A city core can return tens of thousands of nodes; cap how many we walk
+	// so a single request can't turn into thousands of sequential inserts.
+	const maxElements = 500
+	elements := result.Elements
+	if len(elements) > maxElements {
+		elements = elements[:maxElements]
+	}
 
 	inserted := 0
-	for _, el := range result.Elements {
+	for _, el := range elements {
 		name := el.Tags["name"]
 		if name == "" {
 			continue
