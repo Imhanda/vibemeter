@@ -93,6 +93,18 @@ export function VenueListScreen({ navigation }: Props) {
   const [view, setView] = useState<ListView>("now");
   const [stale, setStale] = useState(false);
 
+  // A brand-new area comes back empty on the very first look: the server
+  // seeds unfamiliar areas from OpenStreetMap in the background rather than
+  // making this request wait on that (a third-party call with no SLA), so
+  // "nothing nearby" the moment you land somewhere new may just mean the
+  // seed hasn't landed yet. Auto-retry once, a few seconds later, so it shows
+  // up without the user having to know to pull-to-refresh. Keyed by
+  // coords so moving to yet another new area gets its own retry.
+  const emptyRetryRef = useRef<{ key: string; timer: ReturnType<typeof setTimeout> | null }>({
+    key: "",
+    timer: null,
+  });
+
   const load = useCallback(
     async (isRefresh = false, r?: number, v: ListView = view) => {
       isRefresh ? setRefreshing(true) : setLoading(true);
@@ -111,6 +123,14 @@ export function VenueListScreen({ navigation }: Props) {
             CACHE_KEY,
             JSON.stringify({ ts: Date.now(), venues: data }),
           ).catch(() => {});
+
+          const key = `${coords.lat.toFixed(3)},${coords.lng.toFixed(3)}`;
+          if (data.length === 0 && emptyRetryRef.current.key !== key) {
+            emptyRetryRef.current.key = key;
+            emptyRetryRef.current.timer = setTimeout(() => load(true), 6000);
+          } else if (data.length > 0) {
+            emptyRetryRef.current.key = key; // seeded now — don't retry again for this spot
+          }
         }
       } catch (e: any) {
         // Offline / server down — fall back to the last list we saw.
@@ -187,6 +207,17 @@ export function VenueListScreen({ navigation }: Props) {
   useEffect(() => {
     if (!locationLoading) load();
   }, [locationLoading, load]);
+
+  // Cancel a pending empty-area retry (see emptyRetryRef above) whenever
+  // `load` changes identity — i.e. coords/filter/tags/radius/view changed —
+  // so a stale retry for a place/filter the user has since moved on from
+  // never fires with outdated params. A fresh load already happens via the
+  // effect above for whatever changed.
+  useEffect(() => {
+    return () => {
+      if (emptyRetryRef.current.timer) clearTimeout(emptyRetryRef.current.timer);
+    };
+  }, [load]);
 
   function switchView(v: ListView) {
     if (v === view) return;
