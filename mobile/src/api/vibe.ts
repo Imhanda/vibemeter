@@ -62,11 +62,27 @@ export async function analyseAudio(fileUri: string): Promise<AudioSignals> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE_URL}/v1/vibe/analyse`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  // Longer budget than a plain API call — this is an upload plus server-side
+  // inference — but still bounded, so the check-in screen can never spin
+  // forever on a stalled connection.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/v1/vibe/analyse`, {
+      method: "POST",
+      headers,
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw Object.assign(new Error("Analysis timed out — check your connection and try again."), { status: 0 });
+    }
+    throw Object.assign(new Error(e?.message ?? "Network request failed — check your connection."), { status: 0 });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

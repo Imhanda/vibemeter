@@ -6,6 +6,27 @@ interface RequestOptions {
   body?: unknown;
 }
 
+// No request may hang forever — a stalled/blocked connection must surface as
+// a retriable error, never an infinite spinner (App Review flagged Profile
+// and Venues "loading indefinitely" on a network that couldn't reach the API
+// promptly).
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function timedFetch(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw Object.assign(new Error("Request timed out — check your connection and try again."), { status: 0 });
+    }
+    throw Object.assign(new Error(e?.message ?? "Network request failed — check your connection."), { status: 0 });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -21,7 +42,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     }
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await timedFetch(`${API_BASE_URL}${path}`, {
     method: opts.method ?? "GET",
     headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -47,7 +68,7 @@ export const api = {
 
 // Unauthenticated request for auth endpoints
 export async function publicPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await timedFetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
