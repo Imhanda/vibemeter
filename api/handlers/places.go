@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -126,6 +125,14 @@ func GetNearbyPlaces(c *gin.Context) {
 
 	// Re-seed from OpenStreetMap when the area looks thin or data is stale.
 	// Check unfiltered totals so type/tag filters don't cause repeated Overpass calls.
+	// This runs in the background, NOT on this request's critical path: Overpass
+	// (any public mirror) is a third-party dependency with response times
+	// ranging from ~2s to 20s+ or outright blocked, and the mobile client has
+	// its own hard 15s request timeout — waiting on it here means the nearby
+	// list either hangs past that timeout or comes back emptier than reality
+	// just because Overpass was briefly slow. A cold area may show "nothing
+	// nearby" once; a pull-to-refresh (or the next request) picks up whatever
+	// the background seed found.
 	var totalInArea int
 	_ = db.DB.Get(&totalInArea,
 		`SELECT COUNT(*) FROM places
@@ -137,10 +144,7 @@ func GetNearbyPlaces(c *gin.Context) {
 		 WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, $3)`,
 		lat, lng, radius)
 	if totalInArea < 20 || time.Since(lastSync) > 24*time.Hour {
-		seedFromOverpass(lat, lng, radius)
-		if err := db.DB.Select(&rows, q, lat, lng, radius, venueType, tagFilter, limit); err != nil {
-			log.Printf("places: re-query after overpass seed: %v", err)
-		}
+		go seedFromOverpassOnce(lat, lng, radius)
 	}
 
 	// Peak scores from last night, keyed by place_id — only queried for the
