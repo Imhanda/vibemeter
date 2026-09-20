@@ -135,8 +135,14 @@ During the day, tap 'Last night' to see peak scores."
 
 - **Real TLS for the API.** `NSAllowsArbitraryLoads` was removed. `API_BASE_URL`
   is `https://13.63.7.88.nip.io` — that host must present a valid, CA-signed
-  certificate (Caddy / Let's Encrypt on the nip.io hostname is enough). Verify
-  with `curl -v https://13.63.7.88.nip.io/health` showing no cert warnings.
+  certificate. The box runs **nginx + certbot** (Let's Encrypt) on the nip.io
+  hostname, `/etc/letsencrypt/live/13.63.7.88.nip.io/` — see `AWS_DEPLOY.md`.
+  Renewal runs via a `certbot-renew.timer` systemd timer (twice daily); the
+  certbot package's own install did **not** create one, which let the cert
+  expire silently once already (Sept 2026 — caused an App Review rejection).
+  Verify with `curl -v https://13.63.7.88.nip.io/health` showing no cert
+  warnings, and `systemctl list-timers | grep certbot-renew` showing it
+  actually scheduled.
 - **`SKIP_AUTH=false`** is now set in `mobile/src/config.ts`. Also make sure the
   server is **not** started with `SKIP_AUTH=true` in production.
 - **Distribution signing**: create the App Store Connect app record for
