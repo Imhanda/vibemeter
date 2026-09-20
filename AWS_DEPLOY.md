@@ -334,7 +334,43 @@ sudo certbot --nginx -d 13.63.7.88.nip.io \   # replace with YOUR_ELASTIC_IP.nip
   --email YOUR_EMAIL@example.com
 ```
 
-Certbot automatically updates the Nginx config to serve HTTPS and redirect HTTP → HTTPS. The certificate lasts 90 days and auto-renews via a cron job certbot installs.
+Certbot automatically updates the Nginx config to serve HTTPS and redirect HTTP → HTTPS. The certificate lasts 90 days.
+
+**Auto-renewal is not automatic — set it up explicitly.** On this `dnf`
+install, certbot does **not** ship a cron job or systemd timer on its own
+(confirmed: `systemctl list-timers` and `/etc/cron.d/certbot` are both empty
+after a plain `dnf install`). Without this step the cert silently expires in
+90 days with no warning — which happened once already (Sept 2026) and broke
+the app for every user, including failing an App Review submission with a
+"request timed out" rejection. Create the timer yourself:
+
+```bash
+sudo tee /etc/systemd/system/certbot-renew.service > /dev/null <<'UNIT'
+[Unit]
+Description=Certbot Renewal
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot renew --quiet --post-hook "systemctl reload nginx"
+UNIT
+
+sudo tee /etc/systemd/system/certbot-renew.timer > /dev/null <<'UNIT'
+[Unit]
+Description=Run certbot renew twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now certbot-renew.timer
+systemctl list-timers | grep certbot-renew   # must show a real NEXT run time
+```
 
 Verify from your iPhone browser:
 ```
