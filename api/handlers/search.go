@@ -147,6 +147,11 @@ func SearchPlaces(c *gin.Context) {
 			Type:      row.Type,
 			DistanceM: row.DistanceM,
 			PhotoURL:  row.PhotoURL,
+			// Deliberately the exact name match only, not the same-type
+			// "related" tier too — a tester reported that searching "Hard
+			// Rock Cafe" surfacing other cafes read as noise. Those venues
+			// still show, just under "More venues nearby" client-side.
+			IsMatch: isNameMatch,
 		}
 
 		vibeScore := 0.0

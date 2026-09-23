@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -86,6 +86,10 @@ export function VenueListScreen({ navigation }: Props) {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  // True only while `venues` holds search results (searchVenues), not a
+  // plain nearby/browse list — gates the "Results" / "More venues nearby"
+  // section split in the list below.
+  const [isSearchResult, setIsSearchResult] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [radius, setRadius] = useState(1000);
   const [radiusModalVisible, setRadiusModalVisible] = useState(false);
@@ -109,6 +113,7 @@ export function VenueListScreen({ navigation }: Props) {
     async (isRefresh = false, r?: number, v: ListView = view) => {
       isRefresh ? setRefreshing(true) : setLoading(true);
       setError(null);
+      setIsSearchResult(false);
       try {
         const type = filter === "all" ? undefined : filter;
         const data = await getNearbyVenues(
@@ -163,8 +168,10 @@ export function VenueListScreen({ navigation }: Props) {
     try {
       const data = await searchVenues({ query, lat: coords.lat, lng: coords.lng, radius });
       setVenues(data);
+      setIsSearchResult(true);
     } catch (e: any) {
       setError(e.message ?? "Search failed");
+      setIsSearchResult(false);
     } finally {
       setIsSearching(false);
     }
@@ -229,6 +236,33 @@ export function VenueListScreen({ navigation }: Props) {
   const clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const daytimeQuiet = view === "now" && !loading && venues.length > 0 && !venues.some(hasLiveVibe);
   const showViewTabs = daytimeQuiet || view === "last_night";
+
+  // Search results split into "the match" and the rest of the nearby list,
+  // shown as two labelled sections instead of one blended list — a tester
+  // flagged that searching "Hard Rock Cafe" surfaced every other cafe right
+  // below it with no visual distinction from the actual match.
+  const listRows = useMemo(() => {
+    type Row =
+      | { kind: "header"; key: string; title: string }
+      | { kind: "venue"; key: string; venue: NearbyVenue };
+    if (!isSearchResult) {
+      return venues.map((v): Row => ({ kind: "venue", key: v.place_id, venue: v }));
+    }
+    const matches = venues.filter((v) => v.is_match);
+    const rest = venues.filter((v) => !v.is_match);
+    if (matches.length === 0) {
+      // Nothing matched by name (e.g. a natural-language query) — nothing
+      // to split, just show the ranked list as-is.
+      return venues.map((v): Row => ({ kind: "venue", key: v.place_id, venue: v }));
+    }
+    const rows: Row[] = [{ kind: "header", key: "h-results", title: "Results" }];
+    rows.push(...matches.map((v): Row => ({ kind: "venue", key: v.place_id, venue: v })));
+    if (rest.length > 0) {
+      rows.push({ kind: "header", key: "h-rest", title: "More venues nearby" });
+      rows.push(...rest.map((v): Row => ({ kind: "venue", key: v.place_id, venue: v })));
+    }
+    return rows;
+  }, [venues, isSearchResult]);
 
   return (
     <View style={styles.container}>
@@ -410,16 +444,20 @@ export function VenueListScreen({ navigation }: Props) {
       {!loading && !error && (
         <View style={{ flex: 1 }}>
           <FlatList
-            data={venues}
-            keyExtractor={(v) => v.place_id}
-            renderItem={({ item }) => (
-              <VenueCard
-                venue={item}
-                onPress={() =>
-                  navigation.navigate("VenueDetail", { placeId: item.place_id, name: item.name })
-                }
-              />
-            )}
+            data={listRows}
+            keyExtractor={(row) => row.key}
+            renderItem={({ item: row }) =>
+              row.kind === "header" ? (
+                <Text style={styles.sectionHeader}>{row.title}</Text>
+              ) : (
+                <VenueCard
+                  venue={row.venue}
+                  onPress={() =>
+                    navigation.navigate("VenueDetail", { placeId: row.venue.place_id, name: row.venue.name })
+                  }
+                />
+              )
+            }
             ListEmptyComponent={
               <View style={styles.center}>
                 <Text style={styles.emptyEmoji}>🎭</Text>
@@ -464,6 +502,12 @@ const sk = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bgBase },
+
+  sectionHeader: {
+    color: C.textSecondary, fontSize: 11, fontWeight: "700",
+    letterSpacing: 2, textTransform: "uppercase",
+    paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8,
+  },
 
   header: { paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12 },
   headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },

@@ -36,7 +36,20 @@ function TrustBar({ score }: { score: number }) {
   return (
     <View style={trust.wrap}>
       <View style={trust.labelRow}>
-        <Text style={trust.label}>Trust Score</Text>
+        <TouchableOpacity
+          style={trust.labelBtn}
+          onPress={() =>
+            Alert.alert(
+              "What's a Trust Score?",
+              "It's not a game to level up — it's how confident we are that your check-ins are genuine, so venue scores stay accurate for everyone.\n\nEvery account starts at 70% and rises to 100% on its own after 10 verified check-ins over 7 days of normal use. It only drops from patterns that look automated or fake — things like impossibly fast travel between venues, a burst of check-ins at one place, or matching another flagged device — not from anything a real person checking in normally would trigger.",
+            )
+          }
+          accessibilityRole="button"
+          accessibilityLabel="What's a trust score?"
+        >
+          <Text style={trust.label}>Trust Score</Text>
+          <Text style={trust.labelInfo}>ⓘ</Text>
+        </TouchableOpacity>
         <Text style={[trust.value, { color }]}>{pct}% · {label}</Text>
       </View>
       <View style={trust.track}>
@@ -218,7 +231,9 @@ function LegalRow({ label, onPress }: { label: string; onPress: () => void }) {
 const trust = StyleSheet.create({
   wrap: { marginTop: 8 },
   labelRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 },
+  labelBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
   label: { color: C.textMuted, fontSize: 11 },
+  labelInfo: { color: C.textMuted, fontSize: 11, opacity: 0.8 },
   value: { fontSize: 11, fontWeight: "700" },
   track: { height: 5, backgroundColor: C.border, borderRadius: 3, overflow: "hidden" },
   fill:  { height: "100%", borderRadius: 3 },

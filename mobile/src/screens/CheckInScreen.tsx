@@ -449,7 +449,7 @@ export function CheckInScreen({ route, navigation }: Props) {
           {recordState === "uploading" && (
             <>
               <ActivityIndicator color={C.teal} size="large" />
-              <Text style={styles.instruction}>Analysing with YAMNet…</Text>
+              <Text style={styles.instruction}>Listening to the room…</Text>
             </>
           )}
 
