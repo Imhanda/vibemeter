@@ -25,6 +25,12 @@ type nearbyPlaceResponse struct {
 	LastUpdated  string   `json:"last_updated,omitempty"`
 	PhotoURL     string   `json:"photo_url,omitempty"`
 	ActiveTags   []string `json:"active_tags"`
+	// IsMatch is only ever set by SearchPlaces (a direct name match on the
+	// query) — always omitted/false from GetNearbyPlaces, which has no
+	// concept of a "match". Lets the client section search results into
+	// "the match" vs. the rest of the nearby list, instead of blending
+	// both into one undifferentiated list.
+	IsMatch bool `json:"is_match,omitempty"`
 }
 
 // GetNearbyPlaces handles GET /v1/places/nearby

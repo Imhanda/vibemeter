@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Linking,
   ScrollView,
@@ -157,11 +158,24 @@ export function VenueDetailScreen({ route, navigation }: Props) {
         {/* Score hero */}
         <View style={styles.scoreHero}>
           <AnimatedScore target={venue.vibe_score} />
-          <Text style={[styles.vibeLabel, { color }]}>
-            {venue.vibe_score == null ? "No data" :
-              venue.vibe_score > 75 ? "RAGING 🔥" :
-              venue.vibe_score >= 50 ? "BUZZING ⚡" : "CHILL 😎"}
-          </Text>
+          <TouchableOpacity
+            style={styles.vibeLabelRow}
+            onPress={() =>
+              Alert.alert(
+                "What's a Vibe Score?",
+                "A 0–100 read on how lively this place is right now, built from recent check-ins — either a quick manual rating or a 10-second ambient sound scan. It fades over about 3 hours, so it reflects what's happening now, not the venue's history.\n\n0–49 Chill · 50–75 Buzzing · 76–100 Raging\n\nThe badge next to the check-in count shows how much data backs the score — more check-ins mean a more confident read.",
+              )
+            }
+            accessibilityRole="button"
+            accessibilityLabel="What's a vibe score?"
+          >
+            <Text style={[styles.vibeLabel, { color }]}>
+              {venue.vibe_score == null ? "No data" :
+                venue.vibe_score > 75 ? "RAGING 🔥" :
+                venue.vibe_score >= 50 ? "BUZZING ⚡" : "CHILL 😎"}
+            </Text>
+            <Text style={[styles.vibeLabelInfo, { color }]}>ⓘ</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Confidence + check-in row */}
@@ -321,7 +335,9 @@ const styles = StyleSheet.create({
     fontSize: 80, fontWeight: "900", letterSpacing: -3, lineHeight: 88,
     textShadowOffset: { width: 0, height: 0 },
   },
+  vibeLabelRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   vibeLabel: { fontSize: 15, fontWeight: "700", letterSpacing: 2 },
+  vibeLabelInfo: { fontSize: 13, opacity: 0.8 },
 
   metaRow: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center" },
   metaChip: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3 },

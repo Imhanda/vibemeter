@@ -13,6 +13,9 @@ export interface NearbyVenue {
   active_tags: string[];
   // "checkin" | "blended" | "google" | "last_night" — where vibe_score came from
   score_source?: string;
+  // Only ever set by searchVenues() — a direct name match on the search
+  // query. Absent/false from getNearbyVenues().
+  is_match?: boolean;
 }
 
 export type NearbyWindow = "last_night";
