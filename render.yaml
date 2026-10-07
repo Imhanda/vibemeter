@@ -1,11 +1,18 @@
 services:
-  # User-facing API. Starter plan (not free) so it doesn't spin down after
-  # 15min idle — a cold start here is exactly the "request timed out" bug
-  # that got build 1.0 (5) rejected by App Review on the old AWS box.
+  # User-facing API. Free plan — spins down after 15min idle, which would
+  # reproduce the "request timed out" App Review rejection from build
+  # 1.0 (5) on the old AWS box unless something pings /health often enough
+  # to keep it awake. See RENDER_DEPLOY.md: set up an UptimeRobot monitor
+  # against /health at an interval under 15min — GitHub Actions cron is
+  # NOT reliable enough for this (this repo's own uptime-check.yml showed
+  # GitHub's free cron firing only ~every 2h in practice, not the 15min
+  # Render needs). This uses ~730 of the account's shared 750 free
+  # instance-hours/month on its own — see the yamnet note below for why
+  # that service is deliberately NOT also kept warm.
   - name: vibemeter-api
     type: web
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     dockerfilePath: ./api/Dockerfile
     dockerContext: ./api
@@ -37,14 +44,20 @@ services:
         sync: false
 
   # Audio classification sidecar, called synchronously from AnalyseAudio
-  # (api/handlers/analyse.go) on the check-in path — also needs to be
-  # always-on, not free tier, for the same cold-start reason as above.
-  # Internal only: no public URL, reachable from vibemeter-api via the
-  # fromService hostport above.
+  # (api/handlers/analyse.go) on the check-in path. Free plan, deliberately
+  # NOT kept warm: Render's 750 free instance-hours/month are shared across
+  # every free service in the workspace, and vibemeter-api above already
+  # uses nearly all of it staying always-on. Pinging this one too would
+  # need ~1460 combined hours/month, blow the shared budget around
+  # mid-month, and get BOTH free services suspended until next month — a
+  # full outage, worse than what this causes instead: the first audio
+  # upload after >15min idle eats a ~30-60s cold start on that one
+  # endpoint. Internal only: no public URL, reachable from vibemeter-api
+  # via the fromService hostport above.
   - name: vibemeter-yamnet
     type: pserv
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     dockerfilePath: ./infra/yamnet/Dockerfile
     dockerContext: ./infra/yamnet
