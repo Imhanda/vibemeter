@@ -1,0 +1,50 @@
+services:
+  # User-facing API. Starter plan (not free) so it doesn't spin down after
+  # 15min idle — a cold start here is exactly the "request timed out" bug
+  # that got build 1.0 (5) rejected by App Review on the old AWS box.
+  - name: vibemeter-api
+    type: web
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: ./api
+    healthCheckPath: /health
+    envVars:
+      - key: YAMNET_URL
+        fromService:
+          name: vibemeter-yamnet
+          type: pserv
+          property: hostport
+      # Everything below is a secret/connection string with no safe
+      # default — set these once in the Render dashboard after the
+      # Blueprint is created (Neon connection string, Upstash Redis URL,
+      # Firebase/Google/Anthropic keys). sync:false means Render prompts
+      # for a value instead of baking one into this file.
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: GOOGLE_WEB_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  # Audio classification sidecar, called synchronously from AnalyseAudio
+  # (api/handlers/analyse.go) on the check-in path — also needs to be
+  # always-on, not free tier, for the same cold-start reason as above.
+  # Internal only: no public URL, reachable from vibemeter-api via the
+  # fromService hostport above.
+  - name: vibemeter-yamnet
+    type: pserv
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./infra/yamnet/Dockerfile
+    dockerContext: ./infra/yamnet

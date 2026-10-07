@@ -1,5 +1,10 @@
 # VibeMeter — AWS Deployment Guide (Phase 1 / Free Tier)
 
+> **Retired 2026-10-07.** The AWS infra described here (EC2, RDS, Elastic IP)
+> was torn down to stop spend once the sign-up credit ran low. Current infra
+> is Render + Neon + Upstash — see [RENDER_DEPLOY.md](RENDER_DEPLOY.md).
+> This doc is kept for history / in case of a future move back to AWS.
+
 This guide covers deploying VibeMeter to AWS using free-tier eligible services.
 Estimated cost: ~$0–5/month for the first 12 months.
 
