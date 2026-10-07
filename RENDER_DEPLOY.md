@@ -8,24 +8,39 @@ Replaces the AWS setup in [AWS_DEPLOY.md](AWS_DEPLOY.md) (retired 2026-10-07).
 Mobile App (Expo / iOS)
       │  HTTPS (Render-managed TLS, no certbot/nginx to maintain)
       ▼
-vibemeter-api.onrender.com  (Render web service, Docker, Starter plan)
-      │                  │
+vibemeter-api.onrender.com  (Render web service, Docker, Free plan,
+      │                  │   kept awake by an external UptimeRobot ping)
       │ internal network │ internal network
       ▼                  ▼
 vibemeter-yamnet          Upstash Redis (free)
 (Render private service,   — venue scores (no TTL),
- Docker, Starter plan)      rate limits, trust scores,
-                            websocket pub/sub
+ Docker, Free plan, NOT     rate limits, trust scores,
+ kept artificially warm)    websocket pub/sub
       ▼
 Neon Postgres (free) — places, users, check-ins, trust events
 ```
 
-**Why not the Render free tier for api/yamnet:** free web/private services spin
-down after 15min idle and cold-start on the next request. `AnalyseAudio`
-(`api/handlers/analyse.go`) calls yamnet synchronously on the check-in path,
-and a slow first request is exactly the "request timed out" bug that got
-build 1.0 (5) rejected by App Review (`docs/APP_STORE_SUBMISSION.md`
-history). Starter plan avoids that for ~$7/mo per service (~$14/mo total).
+**Entirely $0/mo**, with one deliberate tradeoff explained below.
+
+**Why api is pinged awake but yamnet isn't, even though both are free
+plan:** Render's free tier gives the whole workspace a shared pool of 750
+instance-hours/month (a month is ~730 hours). Keeping `vibemeter-api`
+always-on via an external ping already uses nearly the entire pool by
+itself. Also keeping `vibemeter-yamnet` always-on would need ~1460 combined
+hours/month, blow the shared budget around mid-month, and get **both**
+free services suspended until the next month — a full outage, which is
+worse than the alternative: `AnalyseAudio` (`api/handlers/analyse.go`)
+calls yamnet synchronously on the check-in path, so the first audio upload
+after >15min of no traffic eats a one-time ~30-60s cold start on that one
+endpoint. That's a narrower, cheaper risk than the general-reachability
+"request timed out" bug that got build 1.0 (5) rejected by App Review
+(`docs/APP_STORE_SUBMISSION.md` history) — which is specifically what
+keeping `api` always-on avoids.
+
+If that one-endpoint cold start becomes a real problem later, the fix is
+moving `vibemeter-yamnet` alone to Render's cheapest paid plan (~$7/mo) —
+paid plans don't draw from the free hour pool, so `api` and everything
+else stays $0 either way.
 
 **Why not Render's own Key Value (Redis) product:** its free tier is
 in-memory only and gets wiped on every restart, and Render reserves the
@@ -87,12 +102,24 @@ properly and costs nothing at this scale.
 5. Check `https://<that-url>/health`.
 
 Render auto-deploys on every push to `main` from here on — no GitHub Actions
-deploy workflow needed. `.github/workflows/deploy.yml` (AWS/SSM-based) and
-`.github/workflows/uptime-check.yml` (pinged the old Elastic IP) are already
-disabled; safe to delete once this is confirmed working, or repurpose
-uptime-check.yml to ping the new Render URL instead of deleting it.
+deploy workflow needed. `.github/workflows/deploy.yml` (AWS/SSM-based) is
+already disabled; safe to delete once this is confirmed working.
+`.github/workflows/uptime-check.yml` is also disabled — **don't re-enable it
+as the keep-alive mechanism**: this repo already proved GitHub's free-tier
+cron only fires ~every 2h in practice, well short of the <15min interval
+Render's free plan needs. It's fine to re-enable later purely as a
+secondary "is it actually up" alert (at whatever interval GitHub gives it),
+separate from the keep-alive job UptimeRobot does below.
 
-### 4. Mobile app
+### 4. UptimeRobot (keep-alive for `vibemeter-api`)
+1. After step 3's deploy, note `vibemeter-api`'s public URL.
+2. Create a free account at uptimerobot.com.
+3. Add a new monitor: HTTP(s), URL = `https://<that-url>/health`, interval
+   = 5 minutes (comfortably under Render's 15min sleep window).
+4. That's it — no code or repo changes needed. `vibemeter-yamnet` is
+   deliberately left unmonitored; see the architecture note above for why.
+
+### 5. Mobile app
 Update the hardcoded backend URL in `mobile/src/config.ts`:
 ```ts
 return "https://13.63.7.88.nip.io";   // old AWS Elastic IP
@@ -104,7 +131,7 @@ return "https://vibemeter-api.onrender.com";   // or whatever Render assigned
 Bump `mobile/app.json` `buildNumber` per the usual release loop, then build
 and TestFlight-upload as before.
 
-### 5. Confirm no AWS references remain
+### 6. Confirm no AWS references remain
 `infra/postgres/migrations/` is still the source of truth for schema
 changes — same workflow as before (write migration → PR → merge → apply
 manually against Neon with `psql`, same manual-apply caution that applied
